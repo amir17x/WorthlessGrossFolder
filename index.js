@@ -116,17 +116,35 @@ client.on('messageCreate', async message => {
     const amount = parseInt(args[0]) || 1;
     const cost = amount <= 2 ? amount * 1000 : amount === 3 ? 2800 : amount * 900;
     
-    users[message.author.id] = users[message.author.id] || { tickets: 0, ccoin: 0, invites: 0 };
-    
-    if (users[message.author.id].ccoin < cost) {
-      return message.reply('❌ سکه کافی ندارید!');
+    try {
+      // ارسال درخواست به API ربات CCOIN
+      const response = await fetch('https://api.ccoin.com/v1/transfer', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.CCOIN_TOKEN}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          userId: message.author.id,
+          amount: cost,
+          description: `خرید ${amount} بلیط قرعه کشی`
+        })
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        users[message.author.id] = users[message.author.id] || { tickets: 0, ccoin: 0, invites: 0 };
+        users[message.author.id].tickets += amount;
+        saveData();
+        message.reply(`✅ ${amount} بلیط خریداری شد!`);
+      } else {
+        message.reply('❌ خطا در پردازش تراکنش. لطفاً موجودی خود را بررسی کنید.');
+      }
+    } catch (error) {
+      console.error('CCOIN API Error:', error);
+      message.reply('❌ خطا در ارتباط با سیستم مالی. لطفاً بعداً تلاش کنید.');
     }
-
-    users[message.author.id].ccoin -= cost;
-    users[message.author.id].tickets += amount;
-    saveData();
-
-    message.reply(`✅ ${amount} بلیط خریداری شد!`);
   }
 });
 
