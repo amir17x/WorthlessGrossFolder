@@ -32,7 +32,15 @@ function saveData() {
 
 function loadData() {
   try {
-    if (fs.existsSync('giveaways.json')) giveaways = JSON.parse(fs.readFileSync('giveaways.json', 'utf8'));
+    if (fs.existsSync('giveaways.json')) {
+      giveaways = JSON.parse(fs.readFileSync('giveaways.json', 'utf8'));
+      // Convert any object participants to arrays
+      Object.values(giveaways).forEach(giveaway => {
+        if (!Array.isArray(giveaway.participants)) {
+          giveaway.participants = [];
+        }
+      });
+    }
     if (fs.existsSync('users.json')) users = JSON.parse(fs.readFileSync('users.json', 'utf8'));
     if (fs.existsSync('config.json')) {
       const loadedConfig = JSON.parse(fs.readFileSync('config.json', 'utf8'));
