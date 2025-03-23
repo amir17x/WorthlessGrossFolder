@@ -86,9 +86,10 @@ client.on('guildMemberAdd', async (member) => {
       users[inviterId] = users[inviterId] || { tickets: 0, ccoin: 0, invites: 0, inviteCode: null };
 
       if (!inviteFilterEnabled || !member.user.bot) {
-        if (usedInvite.code === users[inviterId].inviteCode) {
+        if (users[inviterId] && users[inviterId].inviteCode === usedInvite.code) {
           users[inviterId].invites = (users[inviterId].invites || 0) + 1;
           updateTicketsFromInvites(inviterId);
+          saveData();
         }
       }
     }
