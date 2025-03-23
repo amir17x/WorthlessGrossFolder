@@ -1,4 +1,3 @@
-
 const { Client, GatewayIntentBits, EmbedBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder, PermissionsBitField, SlashCommandBuilder } = require('discord.js');
 const fs = require('fs');
 
@@ -159,9 +158,9 @@ client.on('interactionCreate', async interaction => {
         .setColor('#FFD700')
         .setTitle('🎉 گیـــــوآوی 🎉')
         .setDescription(`
-🎁 **جایـــزه**: ${prize}
-⏰ **زمـــان**: <t:${Math.floor((Date.now() + duration) / 1000)}:R>
-👑 **تعداد برنـــدگان**: ${winners}
+🎁 **جایزه**: ${prize}
+⏰ **زمان**: <t:${Math.floor((Date.now() + duration) / 1000)}:R>
+👑 **تعداد برندگان**: ${winners}
 
 👥 **شرکت کنندگان**: 0
 🎫 **مجموع بلیط‌ها**: 0
@@ -173,18 +172,18 @@ client.on('interactionCreate', async interaction => {
 
       const joinButton = new ButtonBuilder()
         .setCustomId('join_giveaway')
-        .setLabel('Join Giveaway')
+        .setLabel('شرکت در قرعه کشی')
         .setStyle(ButtonStyle.Success)
         .setEmoji('🎉');
 
       const buyButton = new ButtonBuilder()
         .setCustomId('buy_ticket')
-        .setLabel('Buy Tickets')
+        .setLabel('خرید بلیط')
         .setStyle(ButtonStyle.Primary);
 
       const inviteButton = new ButtonBuilder()
         .setCustomId('invite_friends')
-        .setLabel('Invite Friends')
+        .setLabel('دعوت دوستان')
         .setStyle(ButtonStyle.Secondary);
 
       const row = new ActionRowBuilder().addComponents(joinButton);
@@ -218,10 +217,10 @@ client.on('interactionCreate', async interaction => {
           .setDescription('❌ Amount must be positive');
         return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
       }
-      
+
       const cost = amount <= 2 ? amount * 1000 : amount === 3 ? 2800 : amount * 900;
       users[interaction.user.id] = users[interaction.user.id] || { tickets: 0, ccoin: 0, invites: 0 };
-      
+
       if (users[interaction.user.id].ccoin < cost) {
         const errorEmbed = new EmbedBuilder()
           .setColor('#ff0000')
@@ -258,7 +257,7 @@ client.on('interactionCreate', async interaction => {
       users[targetUser.id] = users[targetUser.id] || { tickets: 0, ccoin: 0, invites: 0 };
       users[targetUser.id].ccoin = amount;
       saveData();
-      
+
       const embed = new EmbedBuilder()
         .setColor('#00ff00')
         .setDescription(`✅ Set ${amount} CCoins for ${targetUser.tag}`);
@@ -271,7 +270,7 @@ client.on('interactionCreate', async interaction => {
       if (type === 'giveaway') config.giveawayChannelId = channel.id;
       else if (type === 'winners') config.winnersChannelId = channel.id;
       saveData();
-      
+
       const embed = new EmbedBuilder()
         .setColor('#00ff00')
         .setDescription(`✅ Set ${type} channel to ${channel}`);
@@ -283,7 +282,7 @@ client.on('interactionCreate', async interaction => {
       const tickets = options.getInteger('tickets');
       config.inviteRules = { invites, tickets };
       saveData();
-      
+
       const embed = new EmbedBuilder()
         .setColor('#00ff00')
         .setDescription(`✅ Updated: ${invites} invites = ${tickets} tickets`);
@@ -302,12 +301,12 @@ client.on('interactionCreate', async interaction => {
       if (users[userId].tickets === 0) {
         const buyButton = new ButtonBuilder()
           .setCustomId('buy_ticket')
-          .setLabel('Buy Tickets')
+          .setLabel('خرید بلیط')
           .setStyle(ButtonStyle.Primary);
 
         const inviteButton = new ButtonBuilder()
           .setCustomId('invite_friends')
-          .setLabel('Invite Friends')
+          .setLabel('دعوت دوستان')
           .setStyle(ButtonStyle.Secondary);
 
         const row = new ActionRowBuilder().addComponents(buyButton, inviteButton);
@@ -332,18 +331,18 @@ client.on('interactionCreate', async interaction => {
         // Update giveaway message (visible to all)
         const updatedEmbed = new EmbedBuilder()
           .setColor('#FFD700')
-          .setTitle('🎉 GIVEAWAY 🎉')
+          .setTitle('🎉 گیـــــوآوی 🎉')
           .setDescription(`
-Prize: ${giveaway.prize}
-Time: <t:${Math.floor(giveaway.endTime / 1000)}:R>
-Winners: ${giveaway.winners}
+🎁 **جایزه**: ${giveaway.prize}
+⏰ **زمان**: <t:${Math.floor(giveaway.endTime / 1000)}:R>
+👑 **تعداد برندگان**: ${giveaway.winners}
 
-Participants: ${giveaway.participants.length}
-Total Tickets: ${giveaway.participants.reduce((sum, id) => sum + users[id].tickets, 0)}
+👥 **شرکت کنندگان**: ${giveaway.participants.length}
+🎫 **مجموع بلیط‌ها**: ${giveaway.participants.reduce((sum, id) => sum + users[id].tickets, 0)}
 
-Get tickets:
-• Invite friends (${config.inviteRules.invites} invites = ${config.inviteRules.tickets} ticket)
-• Buy with CCOIN (/buy)
+🔰 **نحوه دریافت بلیط**:
+• 👋 دعوت دوستان (${config.inviteRules.invites} دعوت = ${config.inviteRules.tickets} بلیط)
+• 💰 خرید با سکه (/buy)
           `);
 
         interaction.message.edit({ embeds: [updatedEmbed] });
@@ -416,19 +415,19 @@ async function endGiveaway(messageId) {
 
     const winnersArray = Array.from(winners);
     const winnersText = winnersArray.map((id, index) => `${index + 1}. <@${id}>`).join('\n');
-    
+
     const embed = new EmbedBuilder()
       .setColor('#00ff00')
       .setTitle('🎊 برنـــدگان گیـــوآوی 🎊')
       .setDescription(`
-        🎁 **جایـــزه**: ${giveaway.prize}
-        
-        👑 **برنـــدگان خوش شانس**:
+        🎁 **جایزه**: ${giveaway.prize}
+
+        👑 **برندگان خوش شانس**:
         ${winnersText}
-        
+
         🎉 تبریک به همه برندگان!
       `);
-    
+
     await channel.send({ embeds: [embed] });
 
     for (const winnerId of winnersArray) {
@@ -458,11 +457,11 @@ async function endGiveaway(messageId) {
         .setStyle(ButtonStyle.Success);
 
       const row = new ActionRowBuilder().addComponents(claimButton);
-      
+
       const instructionEmbed = new EmbedBuilder()
         .setColor('#0099ff')
         .setDescription('Please confirm your prize! (Send proof or text)');
-      
+
       await winnerChannel.send({ content: `<@${winnerId}>`, embeds: [instructionEmbed], components: [row] });
     }
   }
