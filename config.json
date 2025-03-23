@@ -1,5 +1,9 @@
 {
   "inviteFilterEnabled": true,
   "giveawayChannelId": "1352999717621076159",
-  "winnersChannelId": "1352999717621076159"
+  "winnersChannelId": "1352999717621076159",
+  "inviteRules": {
+    "invites": 3,
+    "tickets": 1
+  }
 }
