@@ -1,0 +1,437 @@
+Let’s dive into the issue with your Discord bot. The problem you’re describing is that the bot isn’t properly tracking invites when users join the server, even though you’ve invited two accounts using your dedicated invite link. The bot isn’t sending notifications to the giveaway channel, and the `/stats` command shows zero invites and no record of your last invite. Let’s break this down step by step to identify the root cause and fix it.
+
+---
+
+### Understanding the Problem
+The bot is supposed to:
+1. Track when a new member joins the server (`guildMemberAdd` event).
+2. Identify the invite link used by the new member.
+3. Increment the inviter’s invite count in the `users` object.
+4. Send a notification to the giveaway channel (set via `/setchannel`).
+5. Update the user’s stats, which should reflect in the `/stats` command.
+
+However, none of this is happening:
+- No notification is sent to the giveaway channel.
+- The `/stats` command shows no invites (`invites: 0`) and no last invite (`lastInvite: 0`).
+
+This suggests that the `guildMemberAdd` event handler isn’t working as expected, or the invite tracking logic is failing.
+
+---
+
+### Step 1: Analyzing the `guildMemberAdd` Event Handler
+The `guildMemberAdd` event is responsible for detecting when a new member joins and tracking the invite they used. Let’s look at the relevant code:
+
+```javascript
+client.on('guildMemberAdd', async (member) => {
+  try {
+    const guildInvites = await member.guild.invites.fetch();
+    const cachedInvites = client.invites?.get(member.guild.id) || new Map();
+
+    let usedInvite = null;
+    guildInvites.forEach((invite) => {
+      const oldInvite = cachedInvites.get(invite.code);
+      if (oldInvite && invite.uses > oldInvite.uses && invite.inviter) {
+        usedInvite = invite;
+      }
+    });
+
+    if (usedInvite && usedInvite.inviter) {
+      const inviterId = usedInvite.inviter.id;
+      users[inviterId] = users[inviterId] || { tickets: 0, ccoin: 0, invites: 0, inviteCode: null, lastInvite: 0 };
+
+      if (!inviteFilterEnabled || !member.user.bot) {
+        users[inviterId].invites = (users[inviterId].invites || 0) + 1;
+        users[inviterId].lastInvite = Date.now();
+        users[inviterId].inviteCode = usedInvite.code;
+        updateTicketsFromInvites(inviterId);
+        saveData();
+
+        const channel = client.channels.cache.get(config.giveawayChannelId);
+        if (channel) {
+          const embed = new EmbedBuilder()
+            .setColor('#00FF88')
+            .setTitle('📨 دعوت جدید!')
+            .setDescription(`<@${inviterId}> یه نفر رو دعوت کرد!\n**تعداد دعوت‌ها:** ${users[inviterId].invites} از ${config.inviteRules.invites} برای دریافت ${config.inviteRules.tickets} بلیط`)
+            .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
+            .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+            .setTimestamp();
+          await channel.send({ embeds: [embed] });
+        }
+      }
+    }
+
+    client.invites?.set(member.guild.id, guildInvites);
+  } catch (err) {
+    console.error('خطا در بررسی دعوت‌ها:', err);
+  }
+});
+```
+
+#### Potential Issues in `guildMemberAdd`
+1. **Invite Caching Issue**:
+   - The bot relies on a `client.invites` Map to store the state of invites for each guild. This Map is populated when the bot starts (`client.once('ready')`):
+     ```javascript
+     client.once('ready', () => {
+       console.log(`✅ ربات ${client.user.tag} آنلاین شد!`);
+       client.invites = new Map();
+       client.guilds.cache.forEach((guild) => {
+         guild.invites.fetch().then((invites) => client.invites.set(guild.id, invites));
+       });
+       setInterval(cleanupExpiredGiveaways, 5 * 60 * 1000);
+       // ...
+     });
+     ```
+   - When a member joins, the bot compares the current invite usage (`guildInvites`) with the cached invites (`cachedInvites`) to determine which invite was used:
+     ```javascript
+     const cachedInvites = client.invites?.get(member.guild.id) || new Map();
+     let usedInvite = null;
+     guildInvites.forEach((invite) => {
+       const oldInvite = cachedInvites.get(invite.code);
+       if (oldInvite && invite.uses > oldInvite.uses && invite.inviter) {
+         usedInvite = invite;
+       }
+     });
+     ```
+   - **Problem**: If `cachedInvites` doesn’t contain the invite code (e.g., the invite was created after the bot started, or the cache wasn’t properly populated), the condition `oldInvite && invite.uses > oldInvite.uses` will never be true, and `usedInvite` will remain `null`. This would prevent the bot from detecting the invite and updating the inviter’s stats.
+
+2. **Permissions Issue**:
+   - The bot needs the `ManageGuild` permission to fetch invites (`member.guild.invites.fetch()`). If the bot lacks this permission, the `fetch()` call will fail, and an error will be caught in the `try-catch` block:
+     ```javascript
+     catch (err) {
+       console.error('خطا در بررسی دعوت‌ها:', err);
+     }
+     ```
+   - If this happens, the bot silently fails to track the invite, and no notification is sent. You should see an error in the console, but if you’re not monitoring the console, you wouldn’t notice.
+
+3. **Invite Filter Logic**:
+   - The bot has an `inviteFilterEnabled` flag that determines whether to count bot invites:
+     ```javascript
+     if (!inviteFilterEnabled || !member.user.bot) {
+       // Increment invites and send notification
+     }
+     ```
+   - If `inviteFilterEnabled` is `true` (which it is by default), the bot will only count invites for non-bot users. If the accounts you invited are bots (unlikely, but worth checking), the bot will skip them.
+
+4. **Giveaway Channel Issue**:
+   - The bot sends a notification to the `giveawayChannelId`:
+     ```javascript
+     const channel = client.channels.cache.get(config.giveawayChannelId);
+     if (channel) {
+       // Send notification
+     }
+     ```
+   - If `config.giveawayChannelId` is `null` (i.e., you haven’t set the channel using `/setchannel`), the notification won’t be sent. However, you mentioned that you’ve set the channel using `/setchannel`, so this is likely not the issue.
+
+5. **Data Persistence**:
+   - The bot updates the `users` object and calls `saveData()` to persist the data:
+     ```javascript
+     users[inviterId].invites = (users[inviterId].invites || 0) + 1;
+     users[inviterId].lastInvite = Date.now();
+     users[inviterId].inviteCode = usedInvite.code;
+     updateTicketsFromInvites(inviterId);
+     saveData();
+     ```
+   - If `saveData()` fails (e.g., due to file system permissions), the data won’t be saved, but this would only affect persistence between bot restarts, not the immediate `/stats` command.
+
+---
+
+### Step 2: Analyzing the `/stats` Command
+The `/stats` command shows the user’s stats, including their invites and last invite time:
+
+```javascript
+else if (commandName === 'stats') {
+  users[interaction.user.id] = users[interaction.user.id] || { tickets: 0, ccoin: 0, invites: 0, inviteCode: null, lastInvite: 0 };
+  const lastInviteTime = users[interaction.user.id].lastInvite ? `<t:${Math.floor(users[interaction.user.id].lastInvite / 1000)}:R>` : 'هنوز دعوتی انجام نشده';
+  const embed = new EmbedBuilder()
+    .setColor('#00FF88')
+    .setTitle('📊 آمار شما')
+    .setDescription(`
+**🎫 بلیط‌ها:** ${users[interaction.user.id].tickets}
+**💰 سکه‌ها:** ${users[interaction.user.id].ccoin}
+**📨 دعوت‌ها:** ${users[interaction.user.id].invites}
+**⏰ آخرین دعوت:** ${lastInviteTime}
+    `)
+    .setThumbnail(interaction.user.displayAvatarURL())
+    .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+    .setTimestamp();
+  await interaction.reply({ embeds: [embed], ephemeral: true });
+}
+```
+
+- The `/stats` command directly reads from the `users` object. If `users[interaction.user.id].invites` is `0` and `lastInvite` is `0`, it means the `guildMemberAdd` event handler never updated these values for your user ID.
+- This confirms that the issue lies in the `guildMemberAdd` event handler, as it’s not incrementing `invites` or setting `lastInvite`.
+
+---
+
+### Step 3: Identifying the Root Cause
+Based on the analysis, the most likely issue is with the invite tracking logic in `guildMemberAdd`. Let’s narrow it down:
+
+1. **Invite Caching Issue**:
+   - The bot caches invites when it starts (`client.invites` Map). However, if you created the invite link *after* the bot started, it won’t be in the cache. When a member joins using that invite, the bot won’t find the invite in `cachedInvites`, and `usedInvite` will be `null`.
+   - Additionally, the bot updates the `client.invites` Map *after* checking for the used invite:
+     ```javascript
+     client.invites?.set(member.guild.id, guildInvites);
+     ```
+     This means the cache is updated too late to be useful for the current `guildMemberAdd` event.
+
+2. **Permissions**:
+   - If the bot lacks the `ManageGuild` permission, it can’t fetch invites, and the `guildMemberAdd` event will fail silently (logging an error to the console).
+
+3. **Invite Filter**:
+   - If `inviteFilterEnabled` is `true` and the invited accounts are bots, the bot will skip them. However, since you’re testing with your own accounts, this is unlikely to be the issue.
+
+---
+
+### Step 4: Fixing the Issue
+Let’s address the invite caching issue, as it’s the most likely culprit. The bot needs to ensure that its invite cache is always up-to-date *before* checking for the used invite. Additionally, we’ll add some debugging to help identify other potential issues (e.g., permissions).
+
+#### Fix 1: Improve Invite Caching
+We need to fetch the current invites *before* comparing them with the cached invites. Let’s modify the `guildMemberAdd` event handler:
+
+```javascript
+client.on('guildMemberAdd', async (member) => {
+  try {
+    // Fetch the current invites for the guild
+    const guildInvites = await member.guild.invites.fetch();
+    const cachedInvites = client.invites?.get(member.guild.id) || new Map();
+
+    console.log('Cached Invites:', cachedInvites); // Debugging
+    console.log('Current Invites:', guildInvites); // Debugging
+
+    let usedInvite = null;
+    guildInvites.forEach((invite) => {
+      const oldInvite = cachedInvites.get(invite.code);
+      console.log(`Invite ${invite.code}: Old Uses=${oldInvite?.uses}, New Uses=${invite.uses}`); // Debugging
+      if (oldInvite && invite.uses > oldInvite.uses && invite.inviter) {
+        usedInvite = invite;
+      }
+    });
+
+    if (usedInvite && usedInvite.inviter) {
+      const inviterId = usedInvite.inviter.id;
+      console.log(`Invite used by ${member.user.tag}, inviter: ${inviterId}`); // Debugging
+      users[inviterId] = users[inviterId] || { tickets: 0, ccoin: 0, invites: 0, inviteCode: null, lastInvite: 0 };
+
+      if (!inviteFilterEnabled || !member.user.bot) {
+        users[inviterId].invites = (users[inviterId].invites || 0) + 1;
+        users[inviterId].lastInvite = Date.now();
+        users[inviterId].inviteCode = usedInvite.code;
+        updateTicketsFromInvites(inviterId);
+        saveData();
+
+        const channel = client.channels.cache.get(config.giveawayChannelId);
+        if (channel) {
+          const embed = new EmbedBuilder()
+            .setColor('#00FF88')
+            .setTitle('📨 دعوت جدید!')
+            .setDescription(`<@${inviterId}> یه نفر رو دعوت کرد!\n**تعداد دعوت‌ها:** ${users[inviterId].invites} از ${config.inviteRules.invites} برای دریافت ${config.inviteRules.tickets} بلیط`)
+            .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
+            .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+            .setTimestamp();
+          await channel.send({ embeds: [embed] });
+        } else {
+          console.log('Giveaway channel not found or not set!'); // Debugging
+        }
+      } else {
+        console.log('Invite not counted: inviteFilterEnabled=', inviteFilterEnabled, 'isBot=', member.user.bot); // Debugging
+      }
+    } else {
+      console.log('No matching invite found for member:', member.user.tag); // Debugging
+    }
+
+    // Update the cache with the current invites
+    client.invites?.set(member.guild.id, guildInvites);
+  } catch (err) {
+    console.error('خطا در بررسی دعوت‌ها:', err);
+  }
+});
+```
+
+#### Fix 2: Handle New Invites
+If an invite was created after the bot started, it won’t be in the cache. We can modify the logic to handle this by checking for invites with a single use (indicating a new invite):
+
+```javascript
+client.on('guildMemberAdd', async (member) => {
+  try {
+    const guildInvites = await member.guild.invites.fetch();
+    const cachedInvites = client.invites?.get(member.guild.id) || new Map();
+
+    console.log('Cached Invites:', cachedInvites);
+    console.log('Current Invites:', guildInvites);
+
+    let usedInvite = null;
+    guildInvites.forEach((invite) => {
+      const oldInvite = cachedInvites.get(invite.code);
+      if (oldInvite && invite.uses > oldInvite.uses && invite.inviter) {
+        usedInvite = invite;
+      } else if (!oldInvite && invite.uses === 1 && invite.inviter) {
+        // If the invite isn't in the cache but has exactly 1 use, it's likely the one used
+        usedInvite = invite;
+      }
+    });
+
+    if (usedInvite && usedInvite.inviter) {
+      const inviterId = usedInvite.inviter.id;
+      console.log(`Invite used by ${member.user.tag}, inviter: ${inviterId}`);
+      users[inviterId] = users[inviterId] || { tickets: 0, ccoin: 0, invites: 0, inviteCode: null, lastInvite: 0 };
+
+      if (!inviteFilterEnabled || !member.user.bot) {
+        users[inviterId].invites = (users[inviterId].invites || 0) + 1;
+        users[inviterId].lastInvite = Date.now();
+        users[inviterId].inviteCode = usedInvite.code;
+        updateTicketsFromInvites(inviterId);
+        saveData();
+
+        const channel = client.channels.cache.get(config.giveawayChannelId);
+        if (channel) {
+          const embed = new EmbedBuilder()
+            .setColor('#00FF88')
+            .setTitle('📨 دعوت جدید!')
+            .setDescription(`<@${inviterId}> یه نفر رو دعوت کرد!\n**تعداد دعوت‌ها:** ${users[inviterId].invites} از ${config.inviteRules.invites} برای دریافت ${config.inviteRules.tickets} بلیط`)
+            .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
+            .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+            .setTimestamp();
+          await channel.send({ embeds: [embed] });
+        } else {
+          console.log('Giveaway channel not found or not set!');
+        }
+      } else {
+        console.log('Invite not counted: inviteFilterEnabled=', inviteFilterEnabled, 'isBot=', member.user.bot);
+      }
+    } else {
+      console.log('No matching invite found for member:', member.user.tag);
+    }
+
+    client.invites?.set(member.guild.id, guildInvites);
+  } catch (err) {
+    console.error('خطا در بررسی دعوت‌ها:', err);
+  }
+});
+```
+
+#### Fix 3: Check Permissions
+Ensure the bot has the `ManageGuild` permission in the server. You can check this in your Discord server settings under **Roles** > [Bot Role] > **Permissions**. If the bot lacks this permission, grant it and restart the bot.
+
+#### Fix 4: Verify Intents
+The bot uses the following intents:
+
+```javascript
+const client = new Client({ 
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildInvites
+  ]
+});
+```
+
+- The `GuildInvites` intent is required to track invites, and it’s already included.
+- The `GuildMembers` intent is required for the `guildMemberAdd` event, and it’s also included.
+
+The intents look correct, so this isn’t the issue.
+
+---
+
+### Step 5: Debugging and Testing
+1. **Add Debugging Logs**:
+   - The modified `guildMemberAdd` event handler includes `console.log` statements to help you debug. Restart the bot and invite a new account, then check the console output to see what’s happening.
+
+2. **Test with a New Invite**:
+   - Use the `/invite_friends` command to generate a new invite link, then use that link to invite a new account. The modified logic should now detect the invite even if it wasn’t in the cache.
+
+3. **Check the Console for Errors**:
+   - If you see an error like `DiscordAPIError: Missing Permissions` in the console, it means the bot lacks the `ManageGuild` permission. Grant the permission and try again.
+
+4. **Verify the Giveaway Channel**:
+   - Double-check that `config.giveawayChannelId` is set correctly by running `/setchannel` again and ensuring the channel exists.
+
+5. **Check `/stats`**:
+   - After inviting a new account, run `/stats` to see if the invite count and last invite time have updated.
+
+---
+
+### Step 6: Additional Notes
+- **Invite Filter**: If you don’t want to count bot invites, keep `inviteFilterEnabled` as `true`. If you’re testing with bot accounts, temporarily set it to `false` using `/invitefilter off`.
+- **Data Persistence**: If the bot restarts, it reloads the `users` object from `users.json`. If `saveData()` failed at some point, the file might not reflect the latest invite counts. Check the `users.json` file to ensure it’s being updated correctly.
+- **Error Handling**: The current error handling in `guildMemberAdd` is minimal. Consider adding more specific error handling to notify you of issues (e.g., sending a message to a log channel).
+
+---
+
+### Final Code for `guildMemberAdd`
+Here’s the final version of the `guildMemberAdd` event handler with the fixes and debugging:
+
+```javascript
+client.on('guildMemberAdd', async (member) => {
+  try {
+    const guildInvites = await member.guild.invites.fetch();
+    const cachedInvites = client.invites?.get(member.guild.id) || new Map();
+
+    console.log('Cached Invites:', cachedInvites);
+    console.log('Current Invites:', guildInvites);
+
+    let usedInvite = null;
+    guildInvites.forEach((invite) => {
+      const oldInvite = cachedInvites.get(invite.code);
+      console.log(`Invite ${invite.code}: Old Uses=${oldInvite?.uses}, New Uses=${invite.uses}`);
+      if (oldInvite && invite.uses > oldInvite.uses && invite.inviter) {
+        usedInvite = invite;
+      } else if (!oldInvite && invite.uses === 1 && invite.inviter) {
+        usedInvite = invite;
+      }
+    });
+
+    if (usedInvite && usedInvite.inviter) {
+      const inviterId = usedInvite.inviter.id;
+      console.log(`Invite used by ${member.user.tag}, inviter: ${inviterId}`);
+      users[inviterId] = users[inviterId] || { tickets: 0, ccoin: 0, invites: 0, inviteCode: null, lastInvite: 0 };
+
+      if (!inviteFilterEnabled || !member.user.bot) {
+        users[inviterId].invites = (users[inviterId].invites || 0) + 1;
+        users[inviterId].lastInvite = Date.now();
+        users[inviterId].inviteCode = usedInvite.code;
+        updateTicketsFromInvites(inviterId);
+        saveData();
+
+        const channel = client.channels.cache.get(config.giveawayChannelId);
+        if (channel) {
+          const embed = new EmbedBuilder()
+            .setColor('#00FF88')
+            .setTitle('📨 دعوت جدید!')
+            .setDescription(`<@${inviterId}> یه نفر رو دعوت کرد!\n**تعداد دعوت‌ها:** ${users[inviterId].invites} از ${config.inviteRules.invites} برای دریافت ${config.inviteRules.tickets} بلیط`)
+            .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
+            .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+            .setTimestamp();
+          await channel.send({ embeds: [embed] });
+        } else {
+          console.log('Giveaway channel not found or not set!');
+        }
+      } else {
+        console.log('Invite not counted: inviteFilterEnabled=', inviteFilterEnabled, 'isBot=', member.user.bot);
+      }
+    } else {
+      console.log('No matching invite found for member:', member.user.tag);
+    }
+
+    client.invites?.set(member.guild.id, guildInvites);
+  } catch (err) {
+    console.error('خطا در بررسی دعوت‌ها:', err);
+  }
+});
+```
+
+---
+
+### Conclusion
+The primary issue was likely the invite caching logic, which failed to detect invites created after the bot started. The modified `guildMemberAdd` event handler now handles new invites by checking for invites with exactly one use. Additionally, the debugging logs will help you identify other issues (e.g., permissions or channel misconfiguration).
+
+After applying these changes:
+1. Restart the bot.
+2. Use `/invite_friends` to generate a new invite link.
+3. Invite a new account using that link.
+4. Check the console for debugging output.
+5. Verify that a notification is sent to the giveaway channel.
+6. Run `/stats` to confirm that your invite count and last invite time have updated.
+
+If you still encounter issues, let me know, and we can dig deeper into the console logs or other parts of the code!

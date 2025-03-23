@@ -17,7 +17,8 @@ let inviteFilterEnabled = true;
 let config = { 
   giveawayChannelId: null, 
   winnersChannelId: null, 
-  inviteRules: { invites: 3, tickets: 1 }
+  inviteRules: { invites: 3, tickets: 1 },
+  adminRoleId: null
 };
 
 function saveData() {
@@ -34,7 +35,6 @@ function loadData() {
   try {
     if (fs.existsSync('giveaways.json')) {
       giveaways = JSON.parse(fs.readFileSync('giveaways.json', 'utf8'));
-      // Convert any object participants to arrays
       Object.values(giveaways).forEach(giveaway => {
         if (!Array.isArray(giveaway.participants)) {
           giveaway.participants = [];
@@ -48,13 +48,14 @@ function loadData() {
       config.giveawayChannelId = loadedConfig.giveawayChannelId;
       config.winnersChannelId = loadedConfig.winnersChannelId;
       config.inviteRules = loadedConfig.inviteRules || { invites: 3, tickets: 1 };
+      config.adminRoleId = loadedConfig.adminRoleId || null;
     }
   } catch (err) {
     console.error('خطا در بارگذاری داده‌ها:', err);
     giveaways = {};
     users = {};
     inviteFilterEnabled = true;
-    config = { giveawayChannelId: null, winnersChannelId: null, inviteRules: { invites: 3, tickets: 1 } };
+    config = { giveawayChannelId: null, winnersChannelId: null, inviteRules: { invites: 3, tickets: 1 }, adminRoleId: null };
   }
   saveData();
 }
@@ -83,13 +84,26 @@ client.on('guildMemberAdd', async (member) => {
 
     if (usedInvite && usedInvite.inviter) {
       const inviterId = usedInvite.inviter.id;
-      users[inviterId] = users[inviterId] || { tickets: 0, ccoin: 0, invites: 0, inviteCode: null };
+      users[inviterId] = users[inviterId] || { tickets: 0, ccoin: 0, invites: 0, inviteCode: null, lastInvite: 0 };
 
       if (!inviteFilterEnabled || !member.user.bot) {
-        if (users[inviterId] && users[inviterId].inviteCode === usedInvite.code) {
-          users[inviterId].invites = (users[inviterId].invites || 0) + 1;
-          updateTicketsFromInvites(inviterId);
-          saveData();
+        // به جای تکیه بر inviteCode، از inviterId برای ردیابی استفاده می‌کنیم
+        users[inviterId].invites = (users[inviterId].invites || 0) + 1;
+        users[inviterId].lastInvite = Date.now();
+        users[inviterId].inviteCode = usedInvite.code; // به‌روزرسانی کد دعوت
+        updateTicketsFromInvites(inviterId);
+        saveData();
+
+        const channel = client.channels.cache.get(config.giveawayChannelId);
+        if (channel) {
+          const embed = new EmbedBuilder()
+            .setColor('#00FF88')
+            .setTitle('📨 دعوت جدید!')
+            .setDescription(`<@${inviterId}> یه نفر رو دعوت کرد!\n**تعداد دعوت‌ها:** ${users[inviterId].invites} از ${config.inviteRules.invites} برای دریافت ${config.inviteRules.tickets} بلیط`)
+            .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
+            .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+            .setTimestamp();
+          await channel.send({ embeds: [embed] });
         }
       }
     }
@@ -151,7 +165,11 @@ client.once('ready', () => {
       .setName('setinvitetickets')
       .setDescription('تنظیم نسبت دعوت به بلیط')
       .addIntegerOption(option => option.setName('invites').setDescription('تعداد دعوت مورد نیاز').setRequired(true))
-      .addIntegerOption(option => option.setName('tickets').setDescription('تعداد بلیط پاداش').setRequired(true))
+      .addIntegerOption(option => option.setName('tickets').setDescription('تعداد بلیط پاداش').setRequired(true)),
+    new SlashCommandBuilder()
+      .setName('setrole')
+      .setDescription('تنظیم نقش برای مدیریت دستورات حساس')
+      .addRoleOption(option => option.setName('role').setDescription('نقش مورد نظر').setRequired(true))
   ];
 
   client.application.commands.set(commands);
@@ -160,6 +178,11 @@ client.once('ready', () => {
 client.on('interactionCreate', async interaction => {
   if (interaction.isCommand()) {
     const { commandName, options, member } = interaction;
+
+    const hasAdminRole = () => {
+      if (!config.adminRoleId) return member.permissions.has(PermissionsBitField.Flags.Administrator);
+      return member.roles.cache.has(config.adminRoleId);
+    };
 
     if (commandName === 'ping') {
       const embed = new EmbedBuilder()
@@ -172,7 +195,7 @@ client.on('interactionCreate', async interaction => {
       await interaction.reply({ embeds: [embed], ephemeral: true });
     }
 
-    else if (commandName === 'giveaway' && member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    else if (commandName === 'giveaway' && hasAdminRole()) {
       const hours = options.getInteger('hours');
       const winners = options.getInteger('winners');
       const prize = options.getString('prize');
@@ -218,7 +241,7 @@ client.on('interactionCreate', async interaction => {
 • 💰 خرید با سکه (/buy)
         `)
         .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
-        .setImage('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
+        .setImage('https://cdn.discordapp.com/attachments/1344927538740203590/1353328718507933706/2304.w018.n002.1764B.p15.1764.jpg?ex=67e14116&is=67dfef96&hm=3ea06047e3220a08f021db9111a9152b86782be820e4dfcbce0899378c9253db&')
         .setFooter({ text: 'شانست رو امتحان کن! 🎈', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
         .setTimestamp();
 
@@ -240,7 +263,13 @@ client.on('interactionCreate', async interaction => {
         .setStyle(ButtonStyle.Secondary)
         .setEmoji('👋');
 
-      const row = new ActionRowBuilder().addComponents(joinButton, buyButton, inviteButton);
+      const cancelButton = new ButtonBuilder()
+        .setCustomId('cancel_giveaway')
+        .setLabel('❌ لغو قرعه‌کشی')
+        .setStyle(ButtonStyle.Danger)
+        .setEmoji('🚫');
+
+      const row = new ActionRowBuilder().addComponents(joinButton, buyButton, inviteButton, cancelButton);
       const message = await client.channels.cache.get(config.giveawayChannelId).send({ embeds: [embed], components: [row] });
 
       giveaways[message.id] = {
@@ -265,7 +294,7 @@ client.on('interactionCreate', async interaction => {
       await interaction.reply({ embeds: [successEmbed], ephemeral: true });
     }
 
-    else if (commandName === 'invitefilter' && member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    else if (commandName === 'invitefilter' && hasAdminRole()) {
       inviteFilterEnabled = options.getString('state') === 'on';
       saveData();
       const embed = new EmbedBuilder()
@@ -292,7 +321,7 @@ client.on('interactionCreate', async interaction => {
       }
 
       const cost = amount <= 2 ? amount * 1000 : amount === 3 ? 2800 : amount * 900;
-      users[interaction.user.id] = users[interaction.user.id] || { tickets: 0, ccoin: 0, invites: 0, inviteCode: null };
+      users[interaction.user.id] = users[interaction.user.id] || { tickets: 0, ccoin: 0, invites: 0, inviteCode: null, lastInvite: 0 };
 
       if (users[interaction.user.id].ccoin < cost) {
         const errorEmbed = new EmbedBuilder()
@@ -320,7 +349,8 @@ client.on('interactionCreate', async interaction => {
     }
 
     else if (commandName === 'stats') {
-      users[interaction.user.id] = users[interaction.user.id] || { tickets: 0, ccoin: 0, invites: 0, inviteCode: null };
+      users[interaction.user.id] = users[interaction.user.id] || { tickets: 0, ccoin: 0, invites: 0, inviteCode: null, lastInvite: 0 };
+      const lastInviteTime = users[interaction.user.id].lastInvite ? `<t:${Math.floor(users[interaction.user.id].lastInvite / 1000)}:R>` : 'هنوز دعوتی انجام نشده';
       const embed = new EmbedBuilder()
         .setColor('#00FF88')
         .setTitle('📊 آمار شما')
@@ -328,6 +358,7 @@ client.on('interactionCreate', async interaction => {
 **🎫 بلیط‌ها:** ${users[interaction.user.id].tickets}
 **💰 سکه‌ها:** ${users[interaction.user.id].ccoin}
 **📨 دعوت‌ها:** ${users[interaction.user.id].invites}
+**⏰ آخرین دعوت:** ${lastInviteTime}
         `)
         .setThumbnail(interaction.user.displayAvatarURL())
         .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
@@ -335,10 +366,10 @@ client.on('interactionCreate', async interaction => {
       await interaction.reply({ embeds: [embed], ephemeral: true });
     }
 
-    else if (commandName === 'setccoin' && member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    else if (commandName === 'setccoin' && hasAdminRole()) {
       const targetUser = options.getUser('user');
       const amount = options.getInteger('amount');
-      users[targetUser.id] = users[targetUser.id] || { tickets: 0, ccoin: 0, invites: 0, inviteCode: null };
+      users[targetUser.id] = users[targetUser.id] || { tickets: 0, ccoin: 0, invites: 0, inviteCode: null, lastInvite: 0 };
       users[targetUser.id].ccoin = amount;
       saveData();
 
@@ -352,7 +383,7 @@ client.on('interactionCreate', async interaction => {
       await interaction.reply({ embeds: [embed], ephemeral: true });
     }
 
-    else if (commandName === 'setchannel' && member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    else if (commandName === 'setchannel' && hasAdminRole()) {
       const type = options.getString('type');
       const channel = options.getChannel('channel');
       if (type === 'giveaway') config.giveawayChannelId = channel.id;
@@ -369,7 +400,7 @@ client.on('interactionCreate', async interaction => {
       await interaction.reply({ embeds: [embed], ephemeral: true });
     }
 
-    else if (commandName === 'setinvitetickets' && member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    else if (commandName === 'setinvitetickets' && hasAdminRole()) {
       const invites = options.getInteger('invites');
       const tickets = options.getInteger('tickets');
       if (invites <= 0 || tickets <= 0) {
@@ -397,9 +428,29 @@ client.on('interactionCreate', async interaction => {
         .setTimestamp();
       await interaction.reply({ embeds: [embed], ephemeral: true });
     }
+
+    else if (commandName === 'setrole' && member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      const role = options.getRole('role');
+      config.adminRoleId = role.id;
+      saveData();
+
+      const embed = new EmbedBuilder()
+        .setColor('#00FF88')
+        .setTitle('✅ تنظیم نقش مدیریت')
+        .setDescription(`📜 نقش مدیریت دستورات حساس به ${role} تنظیم شد.`)
+        .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
+        .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+        .setTimestamp();
+      await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
   }
 
   if (interaction.isButton()) {
+    const hasAdminRole = () => {
+      if (!config.adminRoleId) return interaction.member.permissions.has(PermissionsBitField.Flags.Administrator);
+      return interaction.member.roles.cache.has(config.adminRoleId);
+    };
+
     if (interaction.customId === 'join_giveaway') {
       const giveaway = giveaways[interaction.message.id];
       if (!giveaway) {
@@ -414,7 +465,7 @@ client.on('interactionCreate', async interaction => {
       }
 
       const userId = interaction.user.id;
-      users[userId] = users[userId] || { tickets: 0, ccoin: 0, invites: 0, inviteCode: null };
+      users[userId] = users[userId] || { tickets: 0, ccoin: 0, invites: 0, inviteCode: null, lastInvite: 0 };
 
       if (users[userId].tickets === 0) {
         const errorEmbed = new EmbedBuilder()
@@ -481,7 +532,7 @@ client.on('interactionCreate', async interaction => {
 • 💰 خرید با سکه (/buy)
         `)
         .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
-        .setImage('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
+        .setImage('https://cdn.discordapp.com/attachments/1344927538740203590/1353328718507933706/2304.w018.n002.1764B.p15.1764.jpg?ex=67e14116&is=67dfef96&hm=3ea06047e3220a08f021db9111a9152b86782be820e4dfcbce0899378c9253db&')
         .setFooter({ text: 'شانست رو امتحان کن! 🎈', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
         .setTimestamp();
 
@@ -500,16 +551,8 @@ client.on('interactionCreate', async interaction => {
     }
 
     else if (interaction.customId === 'invite_friends') {
-      if (users[interaction.user.id]?.inviteCode) {
-        const embed = new EmbedBuilder()
-          .setColor('#5865F2')
-          .setTitle('📨 لینک دعوت شما')
-          .setDescription(`لینک اختصاصی شما:\nhttps://discord.gg/${users[interaction.user.id].inviteCode}\n**دعوت دوستان:** ${config.inviteRules.invites} دعوت = ${config.inviteRules.tickets} بلیط`)
-          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
-          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
-          .setTimestamp();
-        return interaction.reply({ embeds: [embed], ephemeral: true });
-      }
+      const userId = interaction.user.id;
+      users[userId] = users[userId] || { tickets: 0, ccoin: 0, invites: 0, inviteCode: null, lastInvite: 0 };
 
       const channel = interaction.guild.channels.cache.get(config.giveawayChannelId);
       if (!channel) {
@@ -523,10 +566,30 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
       }
 
+      // اگر کاربر قبلاً لینک دعوت داشته، آن را نشان می‌دهیم
+      if (users[userId].inviteCode) {
+        const embed = new EmbedBuilder()
+          .setColor('#5865F2')
+          .setTitle('📨 لینک دعوت شما')
+          .setDescription(`لینک اختصاصی شما:\nhttps://discord.gg/${users[userId].inviteCode}\n**دعوت دوستان:** ${config.inviteRules.invites} دعوت = ${config.inviteRules.tickets} بلیط`)
+          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
+          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+          .setTimestamp();
+
+        const regenerateButton = new ButtonBuilder()
+          .setCustomId('regenerate_invite')
+          .setLabel('🔄 ساخت مجدد لینک')
+          .setStyle(ButtonStyle.Secondary)
+          .setEmoji('🔗');
+
+        const row = new ActionRowBuilder().addComponents(regenerateButton);
+        return interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
+      }
+
+      // اگر کاربر لینک دعوت ندارد، یک لینک جدید می‌سازیم
       try {
         const invite = await channel.createInvite({ maxAge: 0, maxUses: 0, unique: true, reason: `دعوت برای ${interaction.user.tag}` });
-        users[interaction.user.id] = users[interaction.user.id] || { tickets: 0, ccoin: 0, invites: 0, inviteCode: null };
-        users[interaction.user.id].inviteCode = invite.code;
+        users[userId].inviteCode = invite.code;
         saveData();
 
         const embed = new EmbedBuilder()
@@ -536,7 +599,15 @@ client.on('interactionCreate', async interaction => {
           .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
           .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
           .setTimestamp();
-        await interaction.reply({ embeds: [embed], ephemeral: true });
+
+        const regenerateButton = new ButtonBuilder()
+          .setCustomId('regenerate_invite')
+          .setLabel('🔄 ساخت مجدد لینک')
+          .setStyle(ButtonStyle.Secondary)
+          .setEmoji('🔗');
+
+        const row = new ActionRowBuilder().addComponents(regenerateButton);
+        await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
       } catch (err) {
         console.error('خطا در ساخت لینک دعوت:', err);
         const errorEmbed = new EmbedBuilder()
@@ -550,7 +621,106 @@ client.on('interactionCreate', async interaction => {
       }
     }
 
-    else if (interaction.customId === 'claim_prize' && interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    else if (interaction.customId === 'regenerate_invite') {
+      const userId = interaction.user.id;
+      const channel = interaction.guild.channels.cache.get(config.giveawayChannelId);
+      if (!channel) {
+        const errorEmbed = new EmbedBuilder()
+          .setColor('#FF5555')
+          .setTitle('❌ خطا!')
+          .setDescription('⛔ کانال قرعه‌کشی پیدا نشد!')
+          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
+          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+          .setTimestamp();
+        return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+      }
+
+      try {
+        const invite = await channel.createInvite({ maxAge: 0, maxUses: 0, unique: true, reason: `دعوت جدید برای ${interaction.user.tag}` });
+        users[userId].inviteCode = invite.code;
+        saveData();
+
+        const embed = new EmbedBuilder()
+          .setColor('#5865F2')
+          .setTitle('📨 لینک دعوت جدید شما')
+          .setDescription(`لینک اختصاصی جدید شما:\n${invite.url}\n**دعوت دوستان:** ${config.inviteRules.invites} دعوت = ${config.inviteRules.tickets} بلیط`)
+          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
+          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+          .setTimestamp();
+
+        const regenerateButton = new ButtonBuilder()
+          .setCustomId('regenerate_invite')
+          .setLabel('🔄 ساخت مجدد لینک')
+          .setStyle(ButtonStyle.Secondary)
+          .setEmoji('🔗');
+
+        const row = new ActionRowBuilder().addComponents(regenerateButton);
+        await interaction.update({ embeds: [embed], components: [row], ephemeral: true });
+      } catch (err) {
+        console.error('خطا در ساخت لینک دعوت جدید:', err);
+        const errorEmbed = new EmbedBuilder()
+          .setColor('#FF5555')
+          .setTitle('❌ خطا!')
+          .setDescription('⛔ نمی‌توانم لینک دعوت جدید بسازیم! لطفاً دسترسی‌های ربات را بررسی کنید.')
+          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
+          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+          .setTimestamp();
+        await interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+      }
+    }
+
+    else if (interaction.customId === 'cancel_giveaway') {
+      if (!hasAdminRole()) {
+        const errorEmbed = new EmbedBuilder()
+          .setColor('#FF5555')
+          .setTitle('❌ خطا!')
+          .setDescription('⛔ شما دسترسی لازم برای لغو قرعه‌کشی را ندارید!')
+          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
+          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+          .setTimestamp();
+        return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+      }
+
+      const giveaway = giveaways[interaction.message.id];
+      if (!giveaway) {
+        const errorEmbed = new EmbedBuilder()
+          .setColor('#FF5555')
+          .setTitle('❌ خطا!')
+          .setDescription('⛔ این قرعه‌کشی قبلاً تمام شده است!')
+          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
+          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+          .setTimestamp();
+        return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+      }
+
+      const channel = await client.channels.fetch(giveaway.channelId);
+      if (channel) {
+        const cancelEmbed = new EmbedBuilder()
+          .setColor('#FF5555')
+          .setTitle('❌ قرعه‌کشی لغو شد!')
+          .setDescription(`⛔ قرعه‌کشی "${giveaway.prize}" توسط <@${interaction.user.id}> لغو شد.`)
+          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
+          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+          .setTimestamp();
+        await channel.send({ embeds: [cancelEmbed] });
+      }
+
+      delete giveaways[interaction.message.id];
+      saveData();
+
+      await interaction.message.delete();
+
+      const successEmbed = new EmbedBuilder()
+        .setColor('#00FF88')
+        .setTitle('✅ قرعه‌کشی لغو شد!')
+        .setDescription('🎉 قرعه‌کشی با موفقیت لغو شد.')
+        .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
+        .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+        .setTimestamp();
+      await interaction.reply({ embeds: [successEmbed], ephemeral: true });
+    }
+
+    else if (interaction.customId === 'claim_prize' && hasAdminRole()) {
       const channel = interaction.channel;
       const winnerId = channel.name.split('-')[1];
       const proof = channel.messages.cache.last()?.attachments.first()?.url || 'بدون مدرک';
@@ -631,7 +801,7 @@ ${winnersText}
 لطفاً برای دریافت جایزه به پیام خصوصی ربات مراجعه کنید.
       `)
       .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
-      .setImage('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
+      .setImage('https://cdn.discordapp.com/attachments/1344927538740203590/1353328718507933706/2304.w018.n002.1764B.p15.1764.jpg?ex=67e14116&is=67dfef96&hm=3ea06047e3220a08f021db9111a9152b86782be820e4dfcbce0899378c9253db&')
       .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
       .setTimestamp();
     await channel.send({ embeds: [embed] });
@@ -657,7 +827,7 @@ ${winnersText}
         permissionOverwrites: [
           { id: channel.guild.id, deny: ['ViewChannel'] },
           { id: winnerId, allow: ['ViewChannel', 'SendMessages'] },
-          { id: channel.guild.roles.cache.find(r => r.permissions.has(PermissionsBitField.Flags.Administrator))?.id, allow: ['ViewChannel', 'SendMessages'] }
+          { id: config.adminRoleId || channel.guild.roles.cache.find(r => r.permissions.has(PermissionsBitField.Flags.Administrator))?.id, allow: ['ViewChannel', 'SendMessages'] }
         ]
       });
 
