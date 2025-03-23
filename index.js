@@ -220,7 +220,7 @@ client.on('interactionCreate', async interaction => {
         .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
         .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
         .setTimestamp();
-      await interaction.reply({ embeds: [embed], flags: [4096] });
+      await interaction.reply({ embeds: [embed], ephemeral: true });
     }
 
     else if (commandName === 'giveaway' && hasAdminRole()) {
@@ -236,7 +236,7 @@ client.on('interactionCreate', async interaction => {
           .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
           .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
           .setTimestamp();
-        return interaction.reply({ embeds: [errorEmbed], flags: [4096] });
+        return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
       }
 
       if (!config.giveawayChannelId) {
@@ -247,7 +247,7 @@ client.on('interactionCreate', async interaction => {
           .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
           .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
           .setTimestamp();
-        return interaction.reply({ embeds: [errorEmbed], flags: [4096] });
+        return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
       }
 
       const duration = hours * 60 * 60 * 1000;
@@ -319,7 +319,7 @@ client.on('interactionCreate', async interaction => {
         .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
         .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
         .setTimestamp();
-      await interaction.reply({ embeds: [successEmbed], flags: [4096] });
+      await interaction.reply({ embeds: [successEmbed], ephemeral: true });
     }
 
     else if (commandName === 'invitefilter' && hasAdminRole()) {
@@ -332,7 +332,7 @@ client.on('interactionCreate', async interaction => {
         .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
         .setFooter({ text: 'رب-ات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
         .setTimestamp();
-      await interaction.reply({ embeds: [embed], flags: [4096] });
+      await interaction.reply({ embeds: [embed], ephemeral: true });
     }
 
     else if (commandName === 'buy') {
@@ -345,7 +345,7 @@ client.on('interactionCreate', async interaction => {
           .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
           .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
           .setTimestamp();
-        return interaction.reply({ embeds: [errorEmbed], flags: [4096] });
+        return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
       }
 
       const cost = amount <= 2 ? amount * config.ticketPrice : amount === 3 ? 2800 : amount * 900;
@@ -359,7 +359,7 @@ client.on('interactionCreate', async interaction => {
           .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
           .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
           .setTimestamp();
-        return interaction.reply({ embeds: [errorEmbed], flags: [4096] });
+        return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
       }
 
       users[interaction.user.id].ccoin -= cost;
@@ -373,7 +373,7 @@ client.on('interactionCreate', async interaction => {
         .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
         .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
         .setTimestamp();
-      await interaction.reply({ embeds: [successEmbed], flags: [4096] });
+      await interaction.reply({ embeds: [successEmbed], ephemeral: true });
     }
 
     else if (commandName === 'stats') {
@@ -391,7 +391,7 @@ client.on('interactionCreate', async interaction => {
         .setThumbnail(interaction.user.displayAvatarURL())
         .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
         .setTimestamp();
-      await interaction.reply({ embeds: [embed], flags: [4096] });
+      await interaction.reply({ embeds: [embed], ephemeral: true });
     }
 
     else if (commandName === 'setccoin' && hasAdminRole()) {
@@ -408,7 +408,7 @@ client.on('interactionCreate', async interaction => {
         .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
         .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
         .setTimestamp();
-      await interaction.reply({ embeds: [embed], flags: [4096] });
+      await interaction.reply({ embeds: [embed], ephemeral: true });
     }
 
     else if (commandName === 'setchannel' && hasAdminRole()) {
@@ -425,7 +425,7 @@ client.on('interactionCreate', async interaction => {
         .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
         .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
         .setTimestamp();
-      await interaction.reply({ embeds: [embed], flags: [4096] });
+      await interaction.reply({ embeds: [embed], ephemeral: true });
     }
 
     else if (commandName === 'setinvitetickets' && hasAdminRole()) {
@@ -439,7 +439,7 @@ client.on('interactionCreate', async interaction => {
           .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
           .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
           .setTimestamp();
-        return interaction.reply({ embeds: [errorEmbed], flags: [4096] });
+        return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
       }
 
       config.inviteRules = { invites, tickets };
@@ -454,7 +454,7 @@ client.on('interactionCreate', async interaction => {
         .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
         .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
         .setTimestamp();
-      await interaction.reply({ embeds: [embed], flags: [4096] });
+      await interaction.reply({ embeds: [embed], ephemeral: true });
     }
 
     else if (commandName === 'setrole' && member.permissions.has(PermissionsBitField.Flags.Administrator)) {
@@ -469,7 +469,7 @@ client.on('interactionCreate', async interaction => {
         .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
         .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
         .setTimestamp();
-      await interaction.reply({ embeds: [embed], flags: [4096] });
+      await interaction.reply({ embeds: [embed], ephemeral: true });
     }
 
     else if (commandName === 'alert' && hasAdminRole()) {
@@ -484,7 +484,7 @@ client.on('interactionCreate', async interaction => {
             .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
             .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
             .setTimestamp();
-          return interaction.reply({ embeds: [errorEmbed], flags: [4096] });
+          return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
         }
         config.alertEnabled = true;
         config.alertMinutes = minutes;
@@ -496,7 +496,7 @@ client.on('interactionCreate', async interaction => {
           .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
           .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
           .setTimestamp();
-        await interaction.reply({ embeds: [embed], flags: [4096] });
+        await interaction.reply({ embeds: [embed], ephemeral: true });
       } else if (action === 'off') {
         config.alertEnabled = false;
         saveData();
@@ -507,7 +507,7 @@ client.on('interactionCreate', async interaction => {
           .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
           .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
           .setTimestamp();
-        await interaction.reply({ embeds: [embed], flags: [4096] });
+        await interaction.reply({ embeds: [embed], ephemeral: true });
       }
     }
 
@@ -532,7 +532,7 @@ client.on('interactionCreate', async interaction => {
         .setThumbnail(user.displayAvatarURL())
         .setFooter({ text: 'پنل ادمین', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
         .setTimestamp();
-      await interaction.reply({ embeds: [embed], flags: [4096] });
+      await interaction.reply({ embeds: [embed], ephemeral: true });
     }
   }
 
@@ -552,7 +552,7 @@ client.on('interactionCreate', async interaction => {
           .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
           .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
           .setTimestamp();
-        return interaction.reply({ embeds: [errorEmbed], flags: [4096] });
+        return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
       }
 
       const userId = interaction.user.id;
@@ -580,7 +580,7 @@ client.on('interactionCreate', async interaction => {
           .setEmoji('👋');
 
         const row = new ActionRowBuilder().addComponents(buyButton, inviteButton);
-        return interaction.reply({ embeds: [errorEmbed], components: [row], flags: [4096] });
+        return interaction.reply({ embeds: [errorEmbed], components: [row], ephemeral: true });
       }
 
       if (giveaway.participants.includes(userId)) {
@@ -591,7 +591,7 @@ client.on('interactionCreate', async interaction => {
           .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
           .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
           .setTimestamp();
-        return interaction.reply({ embeds: [errorEmbed], flags: [4096] });
+        return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
       }
 
       users[userId].tickets -= 1;
@@ -605,7 +605,7 @@ client.on('interactionCreate', async interaction => {
         .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
         .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
         .setTimestamp();
-      await interaction.reply({ embeds: [successEmbed], flags: [4096] });
+      await interaction.reply({ embeds: [successEmbed], ephemeral: true });
 
       const totalTickets = giveaway.participants.length;
       const updatedEmbed = new EmbedBuilder()
@@ -639,7 +639,7 @@ client.on('interactionCreate', async interaction => {
         .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
         .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
         .setTimestamp();
-      await interaction.reply({ embeds: [embed], flags: [4096] });
+      await interaction.reply({ embeds: [embed], ephemeral: true });
     }
 
     else if (interaction.customId === 'invite_friends') {
@@ -655,7 +655,7 @@ client.on('interactionCreate', async interaction => {
           .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
           .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
           .setTimestamp();
-        return interaction.reply({ embeds: [errorEmbed], flags: [4096] });
+        return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
       }
 
       if (users[userId].inviteCode) {
@@ -674,7 +674,7 @@ client.on('interactionCreate', async interaction => {
           .setEmoji('🔗');
 
         const row = new ActionRowBuilder().addComponents(regenerateButton);
-        return interaction.reply({ embeds: [embed], components: [row], flags: [4096] });
+        return interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
       }
 
       try {
@@ -697,7 +697,7 @@ client.on('interactionCreate', async interaction => {
           .setEmoji('🔗');
 
         const row = new ActionRowBuilder().addComponents(regenerateButton);
-        await interaction.reply({ embeds: [embed], components: [row], flags: [4096] });
+        await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
       } catch (err) {
         console.error('خطا در ساخت لینک دعوت:', err);
         const errorEmbed = new EmbedBuilder()
@@ -707,7 +707,7 @@ client.on('interactionCreate', async interaction => {
           .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
           .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
           .setTimestamp();
-        await interaction.reply({ embeds: [errorEmbed], flags: [4096] });
+        await interaction.reply({ embeds: [errorEmbed], ephemeral: true });
       }
     }
 
@@ -722,7 +722,7 @@ client.on('interactionCreate', async interaction => {
           .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
           .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
           .setTimestamp();
-        return interaction.reply({ embeds: [errorEmbed], flags: [4096] });
+        return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
       }
 
       try {
@@ -745,7 +745,7 @@ client.on('interactionCreate', async interaction => {
           .setEmoji('🔗');
 
         const row = new ActionRowBuilder().addComponents(regenerateButton);
-        await interaction.update({ embeds: [embed], components: [row], flags: [4096] });
+        await interaction.update({ embeds: [embed], components: [row], ephemeral: true });
       } catch (err) {
         console.error('خطا در ساخت لینک دعوت جدید:', err);
         const errorEmbed = new EmbedBuilder()
@@ -755,7 +755,7 @@ client.on('interactionCreate', async interaction => {
           .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
           .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
           .setTimestamp();
-        await interaction.reply({ embeds: [errorEmbed], flags: [4096] });
+        await interaction.reply({ embeds: [errorEmbed], ephemeral: true });
       }
     }
 
@@ -768,7 +768,7 @@ client.on('interactionCreate', async interaction => {
           .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
           .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
           .setTimestamp();
-        return interaction.reply({ embeds: [errorEmbed], flags: [4096] });
+        return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
       }
 
       const giveaway = giveaways[interaction.message.id];
@@ -780,7 +780,7 @@ client.on('interactionCreate', async interaction => {
           .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
           .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
           .setTimestamp();
-        return interaction.reply({ embeds: [errorEmbed], flags: [4096] });
+        return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
       }
 
       const channel = await client.channels.fetch(giveaway.channelId);
@@ -808,7 +808,7 @@ client.on('interactionCreate', async interaction => {
         .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
         .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
         .setTimestamp();
-      await interaction.reply({ embeds: [successEmbed], flags: [4096] });
+      await interaction.reply({ embeds: [successEmbed], ephemeral: true });
     }
 
     else if (interaction.customId === 'claim_prize' && hasAdminRole()) {
@@ -843,7 +843,7 @@ client.on('interactionCreate', async interaction => {
         .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
         .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
         .setTimestamp();
-      await interaction.reply({ embeds: [successEmbed], flags: [4096] });
+      await interaction.reply({ embeds: [successEmbed], ephemeral: true });
 
       setTimeout(() => channel.delete(), 24 * 60 * 60 * 1000);
     }
