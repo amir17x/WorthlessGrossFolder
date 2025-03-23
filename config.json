@@ -1,10 +1,13 @@
 {
-  "inviteFilterEnabled": true,
+  "inviteFilterEnabled": false,
   "giveawayChannelId": "1352999717621076159",
   "winnersChannelId": "1352999717621076159",
   "inviteRules": {
     "invites": 3,
     "tickets": 1
   },
-  "adminRoleId": null
+  "adminRoleId": "1343954499244523593",
+  "ticketPrice": 1000,
+  "alertEnabled": false,
+  "alertMinutes": 15
 }

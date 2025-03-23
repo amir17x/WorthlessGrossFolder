@@ -1,8 +1,15 @@
 {
   "700031045231182005": {
     "tickets": 0,
-    "ccoin": 10,
+    "ccoin": 1999999998000,
     "invites": 0,
     "inviteCode": "QCrfKPeDCN"
+  },
+  "1353297464144433272": {
+    "tickets": 0,
+    "ccoin": 8000,
+    "invites": 0,
+    "inviteCode": "Sqjujw6XEf",
+    "lastInvite": 0
   }
 }

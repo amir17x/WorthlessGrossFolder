@@ -18,7 +18,10 @@ let config = {
   giveawayChannelId: null, 
   winnersChannelId: null, 
   inviteRules: { invites: 3, tickets: 1 },
-  adminRoleId: null
+  adminRoleId: null,
+  ticketPrice: 1000,
+  alertEnabled: false,
+  alertMinutes: 15
 };
 
 function saveData() {
@@ -45,17 +48,14 @@ function loadData() {
     if (fs.existsSync('config.json')) {
       const loadedConfig = JSON.parse(fs.readFileSync('config.json', 'utf8'));
       inviteFilterEnabled = loadedConfig.inviteFilterEnabled;
-      config.giveawayChannelId = loadedConfig.giveawayChannelId;
-      config.winnersChannelId = loadedConfig.winnersChannelId;
-      config.inviteRules = loadedConfig.inviteRules || { invites: 3, tickets: 1 };
-      config.adminRoleId = loadedConfig.adminRoleId || null;
+      config = { ...config, ...loadedConfig };
     }
   } catch (err) {
     console.error('خطا در بارگذاری داده‌ها:', err);
     giveaways = {};
     users = {};
     inviteFilterEnabled = true;
-    config = { giveawayChannelId: null, winnersChannelId: null, inviteRules: { invites: 3, tickets: 1 }, adminRoleId: null };
+    config = { giveawayChannelId: null, winnersChannelId: null, inviteRules: { invites: 3, tickets: 1 }, adminRoleId: null, ticketPrice: 1000, alertEnabled: false, alertMinutes: 15 };
   }
   saveData();
 }
@@ -84,7 +84,7 @@ client.on('guildMemberAdd', async (member) => {
 
     if (usedInvite && usedInvite.inviter) {
       const inviterId = usedInvite.inviter.id;
-      users[inviterId] = users[inviterId] || { tickets: 0, ccoin: 0, invites: 0, inviteCode: null, lastInvite: 0, inviteHistory: [] , ticketsFromInvites: 0};
+      users[inviterId] = users[inviterId] || { tickets: 0, ccoin: 0, invites: 0, inviteCode: null, lastInvite: 0, inviteHistory: [], ticketsFromInvites: 0 };
 
       if (!inviteFilterEnabled || !member.user.bot) {
         const now = Date.now();
@@ -92,7 +92,6 @@ client.on('guildMemberAdd', async (member) => {
         users[inviterId].lastInvite = now;
         users[inviterId].inviteCode = usedInvite.code;
 
-        // ذخیره تاریخچه دعوت
         users[inviterId].inviteHistory.push({
           userId: member.user.id,
           username: member.user.tag,
@@ -100,7 +99,6 @@ client.on('guildMemberAdd', async (member) => {
           inviteCode: usedInvite.code
         });
 
-        // محدود کردن تاریخچه به 5 دعوت آخر
         if (users[inviterId].inviteHistory.length > 5) {
           users[inviterId].inviteHistory = users[inviterId].inviteHistory.slice(-5);
         }
@@ -121,10 +119,11 @@ client.on('guildMemberAdd', async (member) => {
 • تا بلیط بعدی: ${config.inviteRules.invites - (users[inviterId].invites % config.inviteRules.invites)} دعوت دیگر
 
 🔗 **کد دعوت:** \`${usedInvite.code}\``)
-            .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
-            .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+            .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
+            .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
             .setTimestamp();
-          await channel.send({ embeds: [embed] });
+          const message = await channel.send({ embeds: [embed] });
+          if (config.alertEnabled) setTimeout(() => message.delete(), config.alertMinutes * 60 * 1000);
         }
       }
     }
@@ -139,8 +138,8 @@ function updateTicketsFromInvites(userId) {
   const invites = users[userId].invites;
   const { invites: requiredInvites, tickets: rewardTickets } = config.inviteRules;
   const tickets = Math.floor(invites / requiredInvites) * rewardTickets;
-  users[userId].tickets = Math.max(users[userId].tickets, tickets);
-  users[userId].ticketsFromInvites = tickets; // Update ticketsFromInvites
+  users[userId].ticketsFromInvites = tickets;
+  users[userId].tickets = (users[userId].tickets || 0) + tickets - users[userId].ticketsFromInvites;
   saveData();
 }
 
@@ -153,9 +152,7 @@ client.once('ready', () => {
   setInterval(cleanupExpiredGiveaways, 5 * 60 * 1000);
 
   const commands = [
-    new SlashCommandBuilder()
-      .setName('ping')
-      .setDescription('بررسی وضعیت ربات'),
+    new SlashCommandBuilder().setName('ping').setDescription('بررسی وضعیت ربات'),
     new SlashCommandBuilder()
       .setName('giveaway')
       .setDescription('شروع یک قرعه‌کشی جدید')
@@ -191,7 +188,16 @@ client.once('ready', () => {
     new SlashCommandBuilder()
       .setName('setrole')
       .setDescription('تنظیم نقش برای مدیریت دستورات حساس')
-      .addRoleOption(option => option.setName('role').setDescription('نقش مورد نظر').setRequired(true))
+      .addRoleOption(option => option.setName('role').setDescription('نقش مورد نظر').setRequired(true)),
+    new SlashCommandBuilder()
+      .setName('alert')
+      .setDescription('تنظیم حذف خودکار پیام‌ها')
+      .addStringOption(option => option.setName('action').setDescription('عمل').setRequired(true).addChoices({ name: 'تنظیم', value: 'set' }, { name: 'خاموش', value: 'off' }))
+      .addIntegerOption(option => option.setName('minutes').setDescription('دقیقه').setRequired(false)),
+    new SlashCommandBuilder()
+      .setName('userstats')
+      .setDescription('مشاهده آمار کاربر')
+      .addUserOption(option => option.setName('user').setDescription('کاربر').setRequired(true))
   ];
 
   client.application.commands.set(commands);
@@ -211,8 +217,8 @@ client.on('interactionCreate', async interaction => {
         .setColor('#00FF88')
         .setTitle('🏓 پینگ ربات')
         .setDescription(`**تأخیر:** ${client.ws.ping} میلی‌ثانیه\n**وضعیت:** آنلاین ✅`)
-        .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
-        .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+        .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
+        .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
         .setTimestamp();
       await interaction.reply({ embeds: [embed], ephemeral: true });
     }
@@ -227,8 +233,8 @@ client.on('interactionCreate', async interaction => {
           .setColor('#FF5555')
           .setTitle('❌ خطا!')
           .setDescription('⛔ ساعت و تعداد برندگان باید مثبت باشند!')
-          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
-          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
+          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
           .setTimestamp();
         return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
       }
@@ -238,8 +244,8 @@ client.on('interactionCreate', async interaction => {
           .setColor('#FF5555')
           .setTitle('❌ خطا!')
           .setDescription('⛔ لطفاً ابتدا کانال قرعه‌کشی را با /setchannel تنظیم کنید!')
-          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
-          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
+          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
           .setTimestamp();
         return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
       }
@@ -262,9 +268,9 @@ client.on('interactionCreate', async interaction => {
 • 👋 دعوت دوستان (${config.inviteRules.invites} دعوت = ${config.inviteRules.tickets} بلیط)
 • 💰 خرید با سکه (/buy)
         `)
-        .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
-        .setImage('https://cdn.discordapp.com/attachments/1344927538740203590/1353328718507933706/2304.w018.n002.1764B.p15.1764.jpg?ex=67e14116&is=67dfef96&hm=3ea06047e3220a08f021db9111a9152b86782be820e4dfcbce0899378c9253db&')
-        .setFooter({ text: 'شانست رو امتحان کن! 🎈', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+        .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
+        .setImage('https://cdn.discordapp.com/attachments/1344927538740203590/1353328718507933706/2304.w018.n002.1764B.p15.1764.jpg')
+        .setFooter({ text: 'شانست رو امتحان کن! 🎈', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
         .setTimestamp();
 
       const joinButton = new ButtonBuilder()
@@ -310,8 +316,8 @@ client.on('interactionCreate', async interaction => {
         .setColor('#00FF88')
         .setTitle('✅ موفقیت!')
         .setDescription('🎉 قرعه‌کشی با موفقیت شروع شد!')
-        .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
-        .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+        .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
+        .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
         .setTimestamp();
       await interaction.reply({ embeds: [successEmbed], ephemeral: true });
     }
@@ -323,8 +329,8 @@ client.on('interactionCreate', async interaction => {
         .setColor('#00FF88')
         .setTitle('✅ تنظیمات فیلتر')
         .setDescription(`🎯 فیلتر دعوت ${inviteFilterEnabled ? 'فعال' : 'غیرفعال'} شد.`)
-        .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
-        .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+        .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
+        .setFooter({ text: 'رب-ات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
         .setTimestamp();
       await interaction.reply({ embeds: [embed], ephemeral: true });
     }
@@ -336,13 +342,13 @@ client.on('interactionCreate', async interaction => {
           .setColor('#FF5555')
           .setTitle('❌ خطا!')
           .setDescription('⛔ تعداد بلیط باید مثبت باشد!')
-          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
-          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
+          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
           .setTimestamp();
         return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
       }
 
-      const cost = amount <= 2 ? amount * 1000 : amount === 3 ? 2800 : amount * 900;
+      const cost = amount <= 2 ? amount * config.ticketPrice : amount === 3 ? 2800 : amount * 900;
       users[interaction.user.id] = users[interaction.user.id] || { tickets: 0, ccoin: 0, invites: 0, inviteCode: null, lastInvite: 0, inviteHistory: [], ticketsFromInvites: 0 };
 
       if (users[interaction.user.id].ccoin < cost) {
@@ -350,8 +356,8 @@ client.on('interactionCreate', async interaction => {
           .setColor('#FF5555')
           .setTitle('❌ خطا!')
           .setDescription('⛔ سکه کافی نداری!')
-          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
-          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
+          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
           .setTimestamp();
         return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
       }
@@ -364,8 +370,8 @@ client.on('interactionCreate', async interaction => {
         .setColor('#00FF88')
         .setTitle('✅ خرید موفق!')
         .setDescription(`🎫 ${amount} بلیط به قیمت ${cost} سکه خریدی!`)
-        .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
-        .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+        .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
+        .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
         .setTimestamp();
       await interaction.reply({ embeds: [successEmbed], ephemeral: true });
     }
@@ -383,7 +389,7 @@ client.on('interactionCreate', async interaction => {
 **⏰ آخرین دعوت:** ${lastInviteTime}
         `)
         .setThumbnail(interaction.user.displayAvatarURL())
-        .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+        .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
         .setTimestamp();
       await interaction.reply({ embeds: [embed], ephemeral: true });
     }
@@ -399,8 +405,8 @@ client.on('interactionCreate', async interaction => {
         .setColor('#00FF88')
         .setTitle('✅ تنظیم سکه')
         .setDescription(`💰 سکه‌های ${targetUser.tag} به ${amount} تنظیم شد.`)
-        .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
-        .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+        .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
+        .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
         .setTimestamp();
       await interaction.reply({ embeds: [embed], ephemeral: true });
     }
@@ -416,8 +422,8 @@ client.on('interactionCreate', async interaction => {
         .setColor('#00FF88')
         .setTitle('✅ تنظیم کانال')
         .setDescription(`📢 کانال ${type === 'giveaway' ? 'قرعه‌کشی' : 'برندگان'} به ${channel} تنظیم شد.`)
-                .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
-        .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+        .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
+        .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
         .setTimestamp();
       await interaction.reply({ embeds: [embed], ephemeral: true });
     }
@@ -430,8 +436,8 @@ client.on('interactionCreate', async interaction => {
           .setColor('#FF5555')
           .setTitle('❌ خطا!')
           .setDescription('⛔ تعداد دعوت‌ها و بلیط‌ها باید مثبت باشد!')
-          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
-          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
+          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
           .setTimestamp();
         return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
       }
@@ -445,8 +451,8 @@ client.on('interactionCreate', async interaction => {
         .setColor('#00FF88')
         .setTitle('✅ تنظیم قانون دعوت')
         .setDescription(`📜 قانون جدید: ${invites} دعوت = ${tickets} بلیط`)
-        .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
-        .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+        .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
+        .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
         .setTimestamp();
       await interaction.reply({ embeds: [embed], ephemeral: true });
     }
@@ -460,8 +466,71 @@ client.on('interactionCreate', async interaction => {
         .setColor('#00FF88')
         .setTitle('✅ تنظیم نقش مدیریت')
         .setDescription(`📜 نقش مدیریت دستورات حساس به ${role} تنظیم شد.`)
-        .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
-        .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+        .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
+        .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
+        .setTimestamp();
+      await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    else if (commandName === 'alert' && hasAdminRole()) {
+      const action = options.getString('action');
+      if (action === 'set') {
+        const minutes = options.getInteger('minutes');
+        if (!minutes || minutes <= 0) {
+          const errorEmbed = new EmbedBuilder()
+            .setColor('#FF5555')
+            .setTitle('❌ خطا!')
+            .setDescription('⛔ لطفاً زمان مثبت وارد کنید!')
+            .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
+            .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
+            .setTimestamp();
+          return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+        }
+        config.alertEnabled = true;
+        config.alertMinutes = minutes;
+        saveData();
+        const embed = new EmbedBuilder()
+          .setColor('#00FF88')
+          .setTitle('✅ تنظیم حذف خودکار')
+          .setDescription(`📢 پیام‌ها بعد از ${minutes} دقیقه حذف می‌شوند.`)
+          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
+          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
+          .setTimestamp();
+        await interaction.reply({ embeds: [embed], ephemeral: true });
+      } else if (action === 'off') {
+        config.alertEnabled = false;
+        saveData();
+        const embed = new EmbedBuilder()
+          .setColor('#00FF88')
+          .setTitle('✅ تنظیم حذف خودکار')
+          .setDescription('📢 حذف خودکار پیام‌ها خاموش شد.')
+          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
+          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
+          .setTimestamp();
+        await interaction.reply({ embeds: [embed], ephemeral: true });
+      }
+    }
+
+    else if (commandName === 'userstats' && hasAdminRole()) {
+      const user = options.getUser('user');
+      users[user.id] = users[user.id] || { tickets: 0, ccoin: 0, invites: 0, inviteCode: null, lastInvite: 0, inviteHistory: [], ticketsFromInvites: 0 };
+      const lastInviteTime = users[user.id].lastInvite ? `<t:${Math.floor(users[user.id].lastInvite / 1000)}:R>` : 'هنوز دعوتی انجام نشده';
+      const inviteHistory = users[user.id].inviteHistory.length > 0 
+        ? users[user.id].inviteHistory.map((entry, index) => `**${index + 1}.** ${entry.username} (<t:${Math.floor(entry.timestamp / 1000)}:R>)`).join('\n')
+        : 'هیچ دعوتی ثبت نشده است.';
+      const embed = new EmbedBuilder()
+        .setColor('#5865F2')
+        .setTitle(`📊 آمار کاربر ${user.tag}`)
+        .setDescription(`
+**🆔 آیدی:** ${user.id}
+**🎫 بلیط‌ها:** ${users[user.id].tickets}
+**💰 سکه‌ها:** ${users[user.id].ccoin}
+**📨 دعوت‌ها:** ${users[user.id].invites}
+**⏰ آخرین دعوت:** ${lastInviteTime}
+**📜 تاریخچه دعوت‌ها (5 مورد آخر):**\n${inviteHistory}
+        `)
+        .setThumbnail(user.displayAvatarURL())
+        .setFooter({ text: 'پنل ادمین', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
         .setTimestamp();
       await interaction.reply({ embeds: [embed], ephemeral: true });
     }
@@ -480,8 +549,8 @@ client.on('interactionCreate', async interaction => {
           .setColor('#FF5555')
           .setTitle('❌ خطا!')
           .setDescription('⛔ این قرعه‌کشی تمام شده است!')
-          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
-          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
+          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
           .setTimestamp();
         return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
       }
@@ -489,13 +558,13 @@ client.on('interactionCreate', async interaction => {
       const userId = interaction.user.id;
       users[userId] = users[userId] || { tickets: 0, ccoin: 0, invites: 0, inviteCode: null, lastInvite: 0, inviteHistory: [], ticketsFromInvites: 0 };
 
-      if (users[userId].tickets === 0) {
+      if (users[userId].tickets < 1) {
         const errorEmbed = new EmbedBuilder()
           .setColor('#FF5555')
           .setTitle('❌ بدون بلیط!')
-          .setDescription(`⛔ شما بلیط ندارید!\n**چطور بلیط بگیرم؟**\n• 👋 دعوت دوستان (${config.inviteRules.invites} دعوت = ${config.inviteRules.tickets} بلیط)\n• 💰 خرید با سکه (/buy)`)
-          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
-          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+          .setDescription(`⛔ شما بلیط کافی ندارید!\n**چطور بلیط بگیرم؟**\n• 👋 دعوت دوستان (${config.inviteRules.invites} دعوت = ${config.inviteRules.tickets} بلیط)\n• 💰 خرید با سکه (/buy)`)
+          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
+          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
           .setTimestamp();
 
         const buyButton = new ButtonBuilder()
@@ -519,25 +588,26 @@ client.on('interactionCreate', async interaction => {
           .setColor('#FF5555')
           .setTitle('❌ خطا!')
           .setDescription('⛔ شما قبلاً در این قرعه‌کشی شرکت کرده‌اید!')
-          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
-          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
+          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
           .setTimestamp();
         return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
       }
 
+      users[userId].tickets -= 1;
       giveaway.participants.push(userId);
       saveData();
 
       const successEmbed = new EmbedBuilder()
         .setColor('#00FF88')
         .setTitle('✅ ثبت‌نام موفق!')
-        .setDescription(`🎉 با ${users[userId].tickets} بلیط در قرعه‌کشی شرکت کردید!`)
-        .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
-        .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+        .setDescription(`🎉 با موفقیت در قرعه‌کشی شرکت کردید!\n**بلیط‌های باقی‌مانده:** ${users[userId].tickets}`)
+        .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
+        .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
         .setTimestamp();
       await interaction.reply({ embeds: [successEmbed], ephemeral: true });
 
-      const totalTickets = giveaway.participants.reduce((sum, id) => sum + users[id].tickets, 0);
+      const totalTickets = giveaway.participants.length;
       const updatedEmbed = new EmbedBuilder()
         .setColor('#FFD700')
         .setTitle('🎉✨ گیـــــوآوی جدید ✨🎉')
@@ -553,9 +623,9 @@ client.on('interactionCreate', async interaction => {
 • 👋 دعوت دوستان (${config.inviteRules.invites} دعوت = ${config.inviteRules.tickets} بلیط)
 • 💰 خرید با سکه (/buy)
         `)
-        .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
-        .setImage('https://cdn.discordapp.com/attachments/1344927538740203590/1353328718507933706/2304.w018.n002.1764B.p15.1764.jpg?ex=67e14116&is=67dfef96&hm=3ea06047e3220a08f021db9111a9152b86782be820e4dfcbce0899378c9253db&')
-        .setFooter({ text: 'شانست رو امتحان کن! 🎈', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+        .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
+        .setImage('https://cdn.discordapp.com/attachments/1344927538740203590/1353328718507933706/2304.w018.n002.1764B.p15.1764.jpg')
+        .setFooter({ text: 'شانست رو امتحان کن! 🎈', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
         .setTimestamp();
 
       await interaction.message.edit({ embeds: [updatedEmbed] });
@@ -565,9 +635,9 @@ client.on('interactionCreate', async interaction => {
       const embed = new EmbedBuilder()
         .setColor('#5865F2')
         .setTitle('💰 خرید بلیط')
-        .setDescription('برای خرید بلیط از `/buy <تعداد>` استفاده کنید\n**مثال:** `/buy 3`')
-        .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
-        .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+        .setDescription(`برای خرید بلیط از \`/buy <تعداد>\` استفاده کنید\n**قیمت هر بلیط:** ${config.ticketPrice} سکه\n**مثال:** \`/buy 3\``)
+        .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
+        .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
         .setTimestamp();
       await interaction.reply({ embeds: [embed], ephemeral: true });
     }
@@ -582,20 +652,19 @@ client.on('interactionCreate', async interaction => {
           .setColor('#FF5555')
           .setTitle('❌ خطا!')
           .setDescription('⛔ کانال قرعه‌کشی پیدا نشد!')
-          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
-          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
+          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
           .setTimestamp();
         return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
       }
 
-      // اگر کاربر قبلاً لینک دعوت داشته، آن را نشان می‌دهیم
       if (users[userId].inviteCode) {
         const embed = new EmbedBuilder()
           .setColor('#5865F2')
           .setTitle('📨 لینک دعوت شما')
           .setDescription(`لینک اختصاصی شما:\nhttps://discord.gg/${users[userId].inviteCode}\n**دعوت دوستان:** ${config.inviteRules.invites} دعوت = ${config.inviteRules.tickets} بلیط`)
-          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
-          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
+          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
           .setTimestamp();
 
         const regenerateButton = new ButtonBuilder()
@@ -608,7 +677,6 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
       }
 
-      // اگر کاربر لینک دعوت ندارد، یک لینک جدید می‌سازیم
       try {
         const invite = await channel.createInvite({ maxAge: 0, maxUses: 0, unique: true, reason: `دعوت برای ${interaction.user.tag}` });
         users[userId].inviteCode = invite.code;
@@ -618,8 +686,8 @@ client.on('interactionCreate', async interaction => {
           .setColor('#5865F2')
           .setTitle('📨 لینک دعوت شما')
           .setDescription(`لینک اختصاصی شما:\n${invite.url}\n**دعوت دوستان:** ${config.inviteRules.invites} دعوت = ${config.inviteRules.tickets} بلیط`)
-          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
-          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
+          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
           .setTimestamp();
 
         const regenerateButton = new ButtonBuilder()
@@ -636,8 +704,8 @@ client.on('interactionCreate', async interaction => {
           .setColor('#FF5555')
           .setTitle('❌ خطا!')
           .setDescription('⛔ نمی‌توانم لینک دعوت بسازیم! لطفاً دسترسی‌های ربات را بررسی کنید.')
-          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
-          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
+          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
           .setTimestamp();
         await interaction.reply({ embeds: [errorEmbed], ephemeral: true });
       }
@@ -651,8 +719,8 @@ client.on('interactionCreate', async interaction => {
           .setColor('#FF5555')
           .setTitle('❌ خطا!')
           .setDescription('⛔ کانال قرعه‌کشی پیدا نشد!')
-          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
-          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
+          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
           .setTimestamp();
         return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
       }
@@ -666,8 +734,8 @@ client.on('interactionCreate', async interaction => {
           .setColor('#5865F2')
           .setTitle('📨 لینک دعوت جدید شما')
           .setDescription(`لینک اختصاصی جدید شما:\n${invite.url}\n**دعوت دوستان:** ${config.inviteRules.invites} دعوت = ${config.inviteRules.tickets} بلیط`)
-          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
-          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
+          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
           .setTimestamp();
 
         const regenerateButton = new ButtonBuilder()
@@ -684,8 +752,8 @@ client.on('interactionCreate', async interaction => {
           .setColor('#FF5555')
           .setTitle('❌ خطا!')
           .setDescription('⛔ نمی‌توانم لینک دعوت جدید بسازیم! لطفاً دسترسی‌های ربات را بررسی کنید.')
-          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
-          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
+          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
           .setTimestamp();
         await interaction.reply({ embeds: [errorEmbed], ephemeral: true });
       }
@@ -697,8 +765,8 @@ client.on('interactionCreate', async interaction => {
           .setColor('#FF5555')
           .setTitle('❌ خطا!')
           .setDescription('⛔ شما دسترسی لازم برای لغو قرعه‌کشی را ندارید!')
-          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
-          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
+          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
           .setTimestamp();
         return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
       }
@@ -709,8 +777,8 @@ client.on('interactionCreate', async interaction => {
           .setColor('#FF5555')
           .setTitle('❌ خطا!')
           .setDescription('⛔ این قرعه‌کشی قبلاً تمام شده است!')
-          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
-          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
+          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
           .setTimestamp();
         return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
       }
@@ -721,10 +789,11 @@ client.on('interactionCreate', async interaction => {
           .setColor('#FF5555')
           .setTitle('❌ قرعه‌کشی لغو شد!')
           .setDescription(`⛔ قرعه‌کشی "${giveaway.prize}" توسط <@${interaction.user.id}> لغو شد.`)
-          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
-          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
+          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
           .setTimestamp();
-        await channel.send({ embeds: [cancelEmbed] });
+        const message = await channel.send({ embeds: [cancelEmbed] });
+        if (config.alertEnabled) setTimeout(() => message.delete(), config.alertMinutes * 60 * 1000);
       }
 
       delete giveaways[interaction.message.id];
@@ -736,8 +805,8 @@ client.on('interactionCreate', async interaction => {
         .setColor('#00FF88')
         .setTitle('✅ قرعه‌کشی لغو شد!')
         .setDescription('🎉 قرعه‌کشی با موفقیت لغو شد.')
-        .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
-        .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+        .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
+        .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
         .setTimestamp();
       await interaction.reply({ embeds: [successEmbed], ephemeral: true });
     }
@@ -755,10 +824,14 @@ client.on('interactionCreate', async interaction => {
 **🎁 جایزه دریافت شد:** ✅
 **📸 مدرک:** ${proof}
         `)
-        .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
-        .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+        .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
+        .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
         .setTimestamp();
-      await client.channels.cache.get(config.winnersChannelId).send({ embeds: [embed] });
+      const publicChannel = client.channels.cache.get(config.winnersChannelId);
+      if (publicChannel) {
+        const message = await publicChannel.send({ embeds: [embed] });
+        if (config.alertEnabled) setTimeout(() => message.delete(), config.alertMinutes * 60 * 1000);
+      }
 
       users[winnerId].ccoin = (users[winnerId].ccoin || 0) + 100;
       saveData();
@@ -767,8 +840,8 @@ client.on('interactionCreate', async interaction => {
         .setColor('#00FF88')
         .setTitle('✅ تأیید شد!')
         .setDescription('🎉 جایزه تأیید شد و در کانال عمومی منتشر شد.\n**پاداش:** 100 سکه به برنده اضافه شد!')
-        .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
-        .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+        .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
+        .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
         .setTimestamp();
       await interaction.reply({ embeds: [successEmbed], ephemeral: true });
 
@@ -783,10 +856,7 @@ async function endGiveaway(messageId) {
 
   const entries = [];
   giveaway.participants.forEach((userId) => {
-    const tickets = users[userId].tickets;
-    for (let i = 0; i < tickets; i++) {
-      entries.push(userId);
-    }
+    entries.push(userId);
   });
 
   const channel = await client.channels.fetch(giveaway.channelId);
@@ -797,10 +867,11 @@ async function endGiveaway(messageId) {
       .setColor('#FF5555')
       .setTitle('❌ قرعه‌کشی لغو شد!')
       .setDescription(`⛔ هیچ شرکت‌کننده‌ای برای قرعه‌کشی "${giveaway.prize}" وجود نداشت.`)
-      .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
-      .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+      .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
+      .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
       .setTimestamp();
-    await channel.send({ embeds: [embed] });
+    const message = await channel.send({ embeds: [embed] });
+    if (config.alertEnabled) setTimeout(() => message.delete(), config.alertMinutes * 60 * 1000);
   } else {
     const winners = new Set();
     while (winners.size < giveaway.winners && winners.size < entries.length) {
@@ -822,11 +893,12 @@ ${winnersText}
 **🎉 تبریک به همه برندگان!**
 لطفاً برای دریافت جایزه به پیام خصوصی ربات مراجعه کنید.
       `)
-      .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
-      .setImage('https://cdn.discordapp.com/attachments/1344927538740203590/1353328718507933706/2304.w018.n002.1764B.p15.1764.jpg?ex=67e14116&is=67dfef96&hm=3ea06047e3220a08f021db9111a9152b86782be820e4dfcbce0899378c9253db&')
-      .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+      .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
+      .setImage('https://cdn.discordapp.com/attachments/1344927538740203590/1353328718507933706/2304.w018.n002.1764B.p15.1764.jpg')
+      .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
       .setTimestamp();
-    await channel.send({ embeds: [embed] });
+    const message = await channel.send({ embeds: [embed] });
+    if (config.alertEnabled) setTimeout(() => message.delete(), config.alertMinutes * 60 * 1000);
 
     for (const winnerId of winnersArray) {
       try {
@@ -834,42 +906,48 @@ ${winnersText}
         const dmEmbed = new EmbedBuilder()
           .setColor('#00FF88')
           .setTitle('🎉✨ برنده شدید! ✨🎉')
-          .setDescription(`تبریک! شما برنده قرعه‌کشی "${giveaway.prize}" شدید!\nلطفاً در کانال خصوصی‌تان با ادمین هماهنگ کنید.`)
-          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
-          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
+          .setDescription(`تبریک! شما برنده قرعه‌کشی "${giveaway.prize}" شدید!\nلطفاً برای هماهنگی به چنل خصوصی بروید.`)
+          .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
+          .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
           .setTimestamp();
-        await user.send({ embeds: [dmEmbed] });
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setLabel('رفتن به چنل خصوصی')
+            .setStyle(ButtonStyle.Link)
+            .setURL(`https://discord.com/channels/${channel.guild.id}/${config.winnersChannelId}`)
+        );
+        await user.send({ embeds: [dmEmbed], components: [row] });
+
+        const privateChannel = client.channels.cache.get(config.winnersChannelId);
+        if (privateChannel) {
+          const thread = await privateChannel.threads.create({
+            name: `برنده-${winnerId}`,
+            autoArchiveDuration: 60,
+            reason: 'Thread برای برنده'
+          });
+          await thread.members.add(winnerId);
+          await thread.send(`<@${winnerId}>، لطفاً مدارک خود را ارسال کنید.`);
+
+          const threadEmbed = new EmbedBuilder()
+            .setColor('#5865F2')
+            .setTitle('📢 هماهنگی جایزه')
+            .setDescription('لطفاً مدارک خود را بفرستید (عکس، متن یا اسکرین‌شات)')
+            .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png')
+            .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg' })
+            .setTimestamp();
+
+          const claimButton = new ButtonBuilder()
+            .setCustomId('claim_prize')
+            .setLabel('🎁 جایزه تحویل داده شد')
+            .setStyle(ButtonStyle.Success)
+            .setEmoji('✅');
+
+          const threadRow = new ActionRowBuilder().addComponents(claimButton);
+          await thread.send({ embeds: [threadEmbed], components: [threadRow] });
+        }
       } catch (err) {
         console.error(`خطا در ارسال پیام به ${winnerId}:`, err);
       }
-
-      const winnerChannel = await channel.guild.channels.create({
-        name: `winner-${winnerId}`,
-        type: 0,
-        permissionOverwrites: [
-          { id: channel.guild.id, deny: ['ViewChannel'] },
-          { id: winnerId, allow: ['ViewChannel', 'SendMessages'] },
-          { id: config.adminRoleId || channel.guild.roles.cache.find(r => r.permissions.has(PermissionsBitField.Flags.Administrator))?.id, allow: ['ViewChannel', 'SendMessages'] }
-        ]
-      });
-
-      const claimButton = new ButtonBuilder()
-        .setCustomId('claim_prize')
-        .setLabel('🎁 جایزه تحویل داده شد')
-        .setStyle(ButtonStyle.Success)
-        .setEmoji('✅');
-
-      const row = new ActionRowBuilder().addComponents(claimButton);
-
-      const instructionEmbed = new EmbedBuilder()
-        .setColor('#5865F2')
-        .setTitle('📢 هماهنگی جایزه')
-        .setDescription('لطفاً جایزه خود را تأیید کنید! (عکس، متن یا اسکرین‌شات بفرستید)')
-        .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
-        .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
-        .setTimestamp();
-
-      await winnerChannel.send({ content: `<@${winnerId}>`, embeds: [instructionEmbed], components: [row] });
     }
   }
 
