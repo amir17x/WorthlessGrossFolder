@@ -2,14 +2,14 @@
   "1353264572336967710": {
     "prize": "moz khar gov",
     "endTime": 1742717416127,
-    "participants": {},
+    "participants": [],
     "winnersCount": 3,
     "channelId": "1352999717621076159"
   },
   "1353266262578298924": {
     "prize": "موز شیر گاو",
     "endTime": 1742717819405,
-    "participants": {},
+    "participants": [],
     "winnersCount": 3,
     "channelId": "1352999717621076159"
   },
@@ -35,6 +35,14 @@
     "winners": 2,
     "participants": [],
     "messageId": "1353294852170977300",
+    "channelId": "1352999717621076159"
+  },
+  "1353296040769486952": {
+    "prize": "l,xa",
+    "endTime": 1742724919016,
+    "winners": 1,
+    "participants": [],
+    "messageId": "1353296040769486952",
     "channelId": "1352999717621076159"
   }
 }
