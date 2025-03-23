@@ -169,7 +169,7 @@ Get tickets:
         messageId: message.id
       };
 
-      interaction.reply({ content: 'Giveaway started!', ephemeral: true });
+      interaction.reply({ content: 'Giveaway started!', flags: ['Ephemeral'] });
     }
 
     if (interaction.commandName === 'setinvitetickets') {
@@ -206,7 +206,7 @@ Get tickets:
 
         interaction.reply({
           content: 'You need tickets to join! Choose an option:',
-          ephemeral: true,
+          flags: ['Ephemeral'],
           components: [row]
         });
         return;
