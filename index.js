@@ -98,39 +98,39 @@ client.once('ready', () => {
   const commands = [
     new SlashCommandBuilder()
       .setName('ping')
-      .setDescription('Check bot latency'),
+      .setDescription('بررسی وضعیت ربات'),
     new SlashCommandBuilder()
       .setName('giveaway')
-      .setDescription('Start a new giveaway')
-      .addIntegerOption(option => option.setName('hours').setDescription('Duration in hours').setRequired(true))
-      .addIntegerOption(option => option.setName('winners').setDescription('Number of winners').setRequired(true))
-      .addStringOption(option => option.setName('prize').setDescription('Prize description').setRequired(true)),
+      .setDescription('شروع یک قرعه‌کشی جدید')
+      .addIntegerOption(option => option.setName('hours').setDescription('مدت زمان به ساعت').setRequired(true))
+      .addIntegerOption(option => option.setName('winners').setDescription('تعداد برندگان').setRequired(true))
+      .addStringOption(option => option.setName('prize').setDescription('توضیحات جایزه').setRequired(true)),
     new SlashCommandBuilder()
       .setName('invitefilter')
-      .setDescription('Toggle invite filter')
-      .addStringOption(option => option.setName('state').setDescription('on/off').setRequired(true).addChoices({ name: 'On', value: 'on' }, { name: 'Off', value: 'off' })),
+      .setDescription('تنظیم فیلتر دعوت')
+      .addStringOption(option => option.setName('state').setDescription('روشن/خاموش').setRequired(true).addChoices({ name: 'روشن', value: 'on' }, { name: 'خاموش', value: 'off' })),
     new SlashCommandBuilder()
       .setName('buy')
-      .setDescription('Buy tickets with CCOIN')
-      .addIntegerOption(option => option.setName('amount').setDescription('Number of tickets').setRequired(true)),
+      .setDescription('خرید بلیط با سکه')
+      .addIntegerOption(option => option.setName('amount').setDescription('تعداد بلیط').setRequired(true)),
     new SlashCommandBuilder()
       .setName('stats')
-      .setDescription('View your stats'),
+      .setDescription('مشاهده آمار شما'),
     new SlashCommandBuilder()
       .setName('setccoin')
-      .setDescription('Set CCOIN for a user')
-      .addUserOption(option => option.setName('user').setDescription('Target user').setRequired(true))
-      .addIntegerOption(option => option.setName('amount').setDescription('CCOIN amount').setRequired(true)),
+      .setDescription('تنظیم سکه برای کاربر')
+      .addUserOption(option => option.setName('user').setDescription('کاربر مورد نظر').setRequired(true))
+      .addIntegerOption(option => option.setName('amount').setDescription('مقدار سکه').setRequired(true)),
     new SlashCommandBuilder()
       .setName('setchannel')
-      .setDescription('Set giveaway or winners channel')
-      .addStringOption(option => option.setName('type').setDescription('Channel type').setRequired(true).addChoices({ name: 'Giveaway', value: 'giveaway' }, { name: 'Winners', value: 'winners' }))
-      .addChannelOption(option => option.setName('channel').setDescription('Target channel').setRequired(true)),
+      .setDescription('تنظیم کانال قرعه‌کشی یا برندگان')
+      .addStringOption(option => option.setName('type').setDescription('نوع کانال').setRequired(true).addChoices({ name: 'قرعه‌کشی', value: 'giveaway' }, { name: 'برندگان', value: 'winners' }))
+      .addChannelOption(option => option.setName('channel').setDescription('کانال مورد نظر').setRequired(true)),
     new SlashCommandBuilder()
       .setName('setinvitetickets')
-      .setDescription('Set invite-to-ticket ratio')
-      .addIntegerOption(option => option.setName('invites').setDescription('Number of invites required').setRequired(true))
-      .addIntegerOption(option => option.setName('tickets').setDescription('Number of tickets rewarded').setRequired(true))
+      .setDescription('تنظیم نسبت دعوت به بلیط')
+      .addIntegerOption(option => option.setName('invites').setDescription('تعداد دعوت مورد نیاز').setRequired(true))
+      .addIntegerOption(option => option.setName('tickets').setDescription('تعداد بلیط پاداش').setRequired(true))
   ];
 
   client.application.commands.set(commands);
