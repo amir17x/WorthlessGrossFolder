@@ -12,5 +12,29 @@
     "participants": {},
     "winnersCount": 3,
     "channelId": "1352999717621076159"
+  },
+  "1353278732147621969": {
+    "prize": "موز",
+    "endTime": 1742720792330,
+    "winners": 3,
+    "participants": [],
+    "messageId": "1353278732147621969",
+    "channelId": "1352999717621076159"
+  },
+  "1353284414850990091": {
+    "prize": "موز",
+    "endTime": 1742722147118,
+    "winners": 1,
+    "participants": [],
+    "messageId": "1353284414850990091",
+    "channelId": "1352999717621076159"
+  },
+  "1353294852170977300": {
+    "prize": "موز خر",
+    "endTime": 1742724635570,
+    "winners": 2,
+    "participants": [],
+    "messageId": "1353294852170977300",
+    "channelId": "1352999717621076159"
   }
 }
