@@ -134,7 +134,10 @@ client.on('interactionCreate', async interaction => {
     const { commandName, options, member } = interaction;
 
     if (commandName === 'ping') {
-      await interaction.reply(`🏓 Pong! Latency: ${client.ws.ping}ms`);
+      const embed = new EmbedBuilder()
+        .setColor('#00ff00')
+        .setDescription(`🏓 Pong! ${client.ws.ping}ms`);
+      await interaction.reply({ embeds: [embed] });
     }
 
     else if (commandName === 'giveaway' && member.permissions.has(PermissionsBitField.Flags.Administrator)) {
@@ -142,32 +145,50 @@ client.on('interactionCreate', async interaction => {
       const winnersCount = options.getInteger('winners');
       const prize = options.getString('prize');
       
-      if (hours <= 0 || winnersCount <= 0) return interaction.reply('❌ Hours and winners count must be positive!');
-      if (!config.giveawayChannelId) return interaction.reply('❌ Please set giveaway channel first with /setchannel!');
+      if (hours <= 0 || winnersCount <= 0) {
+        const errorEmbed = new EmbedBuilder()
+          .setColor('#ff0000')
+          .setDescription('❌ Hours and winners count must be positive!');
+        return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+      }
+
+      if (!config.giveawayChannelId) {
+        const errorEmbed = new EmbedBuilder()
+          .setColor('#ff0000')
+          .setDescription('❌ Please set giveaway channel first with /setchannel!');
+        return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+      }
 
       const duration = hours * 60 * 60 * 1000;
       const endTime = Date.now() + duration;
       
       const embed = new EmbedBuilder()
-        .setTitle('🎉 New Giveaway!')
-        .setDescription(`
-          🎁 Prize: **${prize}**
-          ⏳ Ends: <t:${Math.floor(endTime / 1000)}:R>
-          👥 Participants: 0
-          🎫 Total Tickets: 0
-          🏆 Winners: ${winnersCount}
-        `)
         .setColor('#FFD700')
+        .setTitle('🎉 GIVEAWAY 🎉')
+        .setDescription(`
+          Prize: **${prize}**
+          Time: <t:${Math.floor(endTime / 1000)}:R>
+          Winners: ${winnersCount}
+          
+          Participants: 0
+          Total Tickets: 0
+          
+          Get tickets:
+          • Invite friends (3 invites = 1 ticket)
+          • Buy with CCOIN (/buy)
+        `)
         .setTimestamp();
 
       const joinButton = new ButtonBuilder()
         .setCustomId('join_giveaway')
-        .setLabel('✅ Join Giveaway')
+        .setLabel('Join Giveaway')
+        .setEmoji('🎉')
         .setStyle(ButtonStyle.Success);
 
       const buyButton = new ButtonBuilder()
         .setCustomId('buy_ticket')
-        .setLabel('💰 Buy Tickets')
+        .setLabel('Buy Tickets')
+        .setEmoji('🎫')
         .setStyle(ButtonStyle.Primary);
 
       const row = new ActionRowBuilder().addComponents(joinButton, buyButton);
@@ -183,42 +204,61 @@ client.on('interactionCreate', async interaction => {
       saveData();
 
       setTimeout(() => endGiveaway(giveawayMsg.id), duration);
-      await interaction.reply('✅ Giveaway started successfully!');
+      
+      const successEmbed = new EmbedBuilder()
+        .setColor('#00ff00')
+        .setDescription('✅ Giveaway started successfully!');
+      await interaction.reply({ embeds: [successEmbed] });
     }
 
     else if (commandName === 'invitefilter' && member.permissions.has(PermissionsBitField.Flags.Administrator)) {
       inviteFilterEnabled = options.getString('state') === 'on';
       saveData();
-      await interaction.reply(`✅ Invite filter has been ${inviteFilterEnabled ? 'enabled' : 'disabled'}`);
+      const embed = new EmbedBuilder()
+        .setColor('#00ff00')
+        .setDescription(`✅ Invite filter has been ${inviteFilterEnabled ? 'enabled' : 'disabled'}`);
+      await interaction.reply({ embeds: [embed] });
     }
 
     else if (commandName === 'buy') {
       const amount = options.getInteger('amount');
-      if (amount <= 0) return interaction.reply('❌ Amount must be positive');
+      if (amount <= 0) {
+        const errorEmbed = new EmbedBuilder()
+          .setColor('#ff0000')
+          .setDescription('❌ Amount must be positive');
+        return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+      }
       
       const cost = amount <= 2 ? amount * 1000 : amount === 3 ? 2800 : amount * 900;
       users[interaction.user.id] = users[interaction.user.id] || { tickets: 0, ccoin: 0, invites: 0 };
       
       if (users[interaction.user.id].ccoin < cost) {
-        return interaction.reply('❌ Not enough CCoins');
+        const errorEmbed = new EmbedBuilder()
+          .setColor('#ff0000')
+          .setDescription('❌ Not enough CCoins');
+        return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
       }
 
       users[interaction.user.id].ccoin -= cost;
       users[interaction.user.id].tickets += amount;
       saveData();
-      await interaction.reply(`✅ Bought ${amount} tickets for ${cost} CCoins`);
+
+      const successEmbed = new EmbedBuilder()
+        .setColor('#00ff00')
+        .setDescription(`✅ Bought ${amount} tickets for ${cost} CCoins`);
+      await interaction.reply({ embeds: [successEmbed] });
     }
 
     else if (commandName === 'stats') {
       users[interaction.user.id] = users[interaction.user.id] || { tickets: 0, ccoin: 0, invites: 0 };
       const embed = new EmbedBuilder()
+        .setColor('#00ff00')
         .setTitle('📊 Your Stats')
         .setDescription(`
           🎫 Tickets: ${users[interaction.user.id].tickets}
           💰 CCoins: ${users[interaction.user.id].ccoin}
           📨 Invites: ${users[interaction.user.id].invites}
-        `)
-        .setColor('#00FF00');
+        `);
       await interaction.reply({ embeds: [embed] });
     }
 
@@ -228,7 +268,11 @@ client.on('interactionCreate', async interaction => {
       users[targetUser.id] = users[targetUser.id] || { tickets: 0, ccoin: 0, invites: 0 };
       users[targetUser.id].ccoin = amount;
       saveData();
-      await interaction.reply(`✅ Set ${amount} CCoins for ${targetUser.tag}`);
+      
+      const embed = new EmbedBuilder()
+        .setColor('#00ff00')
+        .setDescription(`✅ Set ${amount} CCoins for ${targetUser.tag}`);
+      await interaction.reply({ embeds: [embed] });
     }
 
     else if (commandName === 'setchannel' && member.permissions.has(PermissionsBitField.Flags.Administrator)) {
@@ -237,7 +281,11 @@ client.on('interactionCreate', async interaction => {
       if (type === 'giveaway') config.giveawayChannelId = channel.id;
       else if (type === 'winners') config.winnersChannelId = channel.id;
       saveData();
-      await interaction.reply(`✅ Set ${type} channel to ${channel}`);
+      
+      const embed = new EmbedBuilder()
+        .setColor('#00ff00')
+        .setDescription(`✅ Set ${type} channel to ${channel}`);
+      await interaction.reply({ embeds: [embed] });
     }
   }
 
@@ -247,14 +295,25 @@ client.on('interactionCreate', async interaction => {
 
     if (customId === 'join_giveaway') {
       const giveaway = giveaways[message.id];
-      if (!giveaway) return interaction.reply({ content: '❌ This giveaway has ended', ephemeral: true });
+      if (!giveaway) {
+        const errorEmbed = new EmbedBuilder()
+          .setColor('#ff0000')
+          .setDescription('❌ This giveaway has ended');
+        return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+      }
       
       if (users[user.id].tickets === 0) {
-        return interaction.reply({ content: '❌ You need tickets to join!', ephemeral: true });
+        const errorEmbed = new EmbedBuilder()
+          .setColor('#ff0000')
+          .setDescription('❌ You need tickets to join!\n• Invite friends (3 invites = 1 ticket)\n• Use /buy to purchase tickets');
+        return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
       }
 
       if (giveaway.participants[user.id]) {
-        return interaction.reply({ content: '❌ You have already joined!', ephemeral: true });
+        const errorEmbed = new EmbedBuilder()
+          .setColor('#ff0000')
+          .setDescription('❌ You have already joined!');
+        return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
       }
 
       giveaway.participants[user.id] = users[user.id].tickets;
@@ -263,48 +322,36 @@ client.on('interactionCreate', async interaction => {
       const totalTickets = Object.values(giveaway.participants).reduce((a, b) => a + b, 0);
       const participantsCount = Object.keys(giveaway.participants).length;
 
-      const updatedEmbed = EmbedBuilder.from(message.embeds[0])
+      const updatedEmbed = new EmbedBuilder()
+        .setColor('#FFD700')
+        .setTitle('🎉 GIVEAWAY 🎉')
         .setDescription(`
-          🎁 Prize: **${giveaway.prize}**
-          ⏳ Ends: <t:${Math.floor(giveaway.endTime / 1000)}:R>
-          👥 Participants: ${participantsCount}
-          🎫 Total Tickets: ${totalTickets}
-          🏆 Winners: ${giveaway.winnersCount}
-        `);
+          Prize: **${giveaway.prize}**
+          Time: <t:${Math.floor(giveaway.endTime / 1000)}:R>
+          Winners: ${giveaway.winnersCount}
+          
+          Participants: ${participantsCount}
+          Total Tickets: ${totalTickets}
+          
+          Get tickets:
+          • Invite friends (3 invites = 1 ticket)
+          • Buy with CCOIN (/buy)
+        `)
+        .setTimestamp();
 
       await message.edit({ embeds: [updatedEmbed] });
-      interaction.reply({ content: `✅ Joined with ${users[user.id].tickets} tickets!`, ephemeral: true });
+      
+      const successEmbed = new EmbedBuilder()
+        .setColor('#00ff00')
+        .setDescription(`✅ Joined with ${users[user.id].tickets} tickets!`);
+      await interaction.reply({ embeds: [successEmbed], ephemeral: true });
     }
 
     else if (customId === 'buy_ticket') {
-      interaction.reply({ 
-        content: '💰 Use `/buy <amount>` to purchase tickets\nExample: `/buy 3`', 
-        ephemeral: true 
-      });
-    }
-
-    else if (customId === 'claim_prize' && interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-      const channel = interaction.channel;
-      const winnerId = channel.name.split('-')[1];
-      const proof = channel.messages.cache.last()?.attachments.first()?.url || 'No proof';
-
       const embed = new EmbedBuilder()
-        .setTitle('🏆 Prize Claim Confirmation')
-        .setDescription(`
-          👤 Winner: <@${winnerId}>
-          🎁 Prize Claimed ✅
-          📸 Proof: ${proof}
-        `)
-        .setColor('#0000FF')
-        .setTimestamp();
-
-      client.channels.cache.get(config.winnersChannelId).send({ embeds: [embed] });
-
-      users[winnerId].ccoin += 100;
-      saveData();
-
-      interaction.reply('✅ Prize confirmed and announced in winners channel');
-      setTimeout(() => channel.delete(), 24 * 60 * 60 * 1000);
+        .setColor('#0099ff')
+        .setDescription('💰 Use `/buy <amount>` to purchase tickets\nExample: `/buy 3`');
+      await interaction.reply({ embeds: [embed], ephemeral: true });
     }
   }
 });
@@ -322,37 +369,38 @@ async function endGiveaway(messageId) {
   if (!channel) return;
 
   if (entries.length === 0) {
-    channel.send({
-      embeds: [
-        new EmbedBuilder()
-          .setTitle('❌ Giveaway Cancelled')
-          .setDescription(`No participants in giveaway for "${giveaway.prize}"`)
-          .setColor('#FF0000')
-      ]
-    });
+    const embed = new EmbedBuilder()
+      .setColor('#ff0000')
+      .setTitle('❌ Giveaway Cancelled')
+      .setDescription(`No participants in giveaway for "${giveaway.prize}"`);
+    channel.send({ embeds: [embed] });
   } else {
     const winners = new Set();
     while (winners.size < giveaway.winnersCount && winners.size < entries.length) {
       winners.add(entries[Math.floor(Math.random() * entries.length)]);
     }
 
-    const winnersText = Array.from(winners).map(id => `<@${id}>`).join('\n');
-    channel.send({
-      embeds: [
-        new EmbedBuilder()
-          .setTitle('🎉 Giveaway Winners!')
-          .setDescription(`
-            🎁 Prize: **${giveaway.prize}**
-            👑 Winners:\n${winnersText}
-          `)
-          .setColor('#00FF00')
-      ]
-    });
+    const winnersArray = Array.from(winners);
+    const winnersText = winnersArray.map((id, index) => `${index + 1}. <@${id}>`).join('\n');
+    
+    const embed = new EmbedBuilder()
+      .setColor('#00ff00')
+      .setTitle('🎉 Giveaway Winners!')
+      .setDescription(`
+        Prize: **${giveaway.prize}**
+        Winners:
+        ${winnersText}
+      `);
+    
+    await channel.send({ embeds: [embed] });
 
-    winners.forEach(async (winnerId) => {
+    for (const winnerId of winnersArray) {
       try {
         const user = await client.users.fetch(winnerId);
-        await user.send(`🎉 Congratulations! You won "${giveaway.prize}"! Check the private channel.`);
+        const dmEmbed = new EmbedBuilder()
+          .setColor('#00ff00')
+          .setDescription(`🎉 Congratulations! You won "${giveaway.prize}"!\nCheck the private channel.`);
+        await user.send({ embeds: [dmEmbed] });
       } catch (err) {
         console.error(`Failed to DM ${winnerId}:`, err);
       }
@@ -372,11 +420,14 @@ async function endGiveaway(messageId) {
         .setLabel('🎁 Prize Delivered')
         .setStyle(ButtonStyle.Success);
 
-      await winnerChannel.send({
-        content: `<@${winnerId}> Please confirm your prize! (Send proof or text)`,
-        components: [new ActionRowBuilder().addComponents(claimButton)]
-      });
-    });
+      const row = new ActionRowBuilder().addComponents(claimButton);
+      
+      const instructionEmbed = new EmbedBuilder()
+        .setColor('#0099ff')
+        .setDescription('Please confirm your prize! (Send proof or text)');
+      
+      await winnerChannel.send({ content: `<@${winnerId}>`, embeds: [instructionEmbed], components: [row] });
+    }
   }
 
   delete giveaways[messageId];
