@@ -157,18 +157,18 @@ client.on('interactionCreate', async interaction => {
 
       const embed = new EmbedBuilder()
         .setColor('#FFD700')
-        .setTitle('🎉 GIVEAWAY 🎉')
+        .setTitle('🎉 گیـــــوآوی 🎉')
         .setDescription(`
-Prize: ${prize}
-Time: in ${hours} hours
-Winners: ${winners}
+🎁 **جایـــزه**: ${prize}
+⏰ **زمـــان**: <t:${Math.floor((Date.now() + duration) / 1000)}:R>
+👑 **تعداد برنـــدگان**: ${winners}
 
-Participants: 0
-Total Tickets: 0
+👥 **شرکت کنندگان**: 0
+🎫 **مجموع بلیط‌ها**: 0
 
-Get tickets:
-• Invite friends (${config.inviteRules.invites} invites = ${config.inviteRules.tickets} ticket)
-• Buy with CCOIN (/buy)
+🔰 **نحوه دریافت بلیط**:
+• 👋 دعوت دوستان (${config.inviteRules.invites} دعوت = ${config.inviteRules.tickets} بلیط)
+• 💰 خرید با سکه (/buy)
         `);
 
       const joinButton = new ButtonBuilder()
@@ -419,11 +419,14 @@ async function endGiveaway(messageId) {
     
     const embed = new EmbedBuilder()
       .setColor('#00ff00')
-      .setTitle('🎉 Giveaway Winners!')
+      .setTitle('🎊 برنـــدگان گیـــوآوی 🎊')
       .setDescription(`
-        Prize: **${giveaway.prize}**
-        Winners:
+        🎁 **جایـــزه**: ${giveaway.prize}
+        
+        👑 **برنـــدگان خوش شانس**:
         ${winnersText}
+        
+        🎉 تبریک به همه برندگان!
       `);
     
     await channel.send({ embeds: [embed] });
