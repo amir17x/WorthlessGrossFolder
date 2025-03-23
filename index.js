@@ -1,4 +1,3 @@
-
 const { Client, GatewayIntentBits, EmbedBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder, PermissionsBitField, SlashCommandBuilder } = require('discord.js');
 const fs = require('fs');
 
@@ -15,7 +14,11 @@ const client = new Client({
 let giveaways = {};
 let users = {};
 let inviteFilterEnabled = true;
-let config = { giveawayChannelId: null, winnersChannelId: null };
+let config = { 
+  giveawayChannelId: null, 
+  winnersChannelId: null, 
+  inviteRules: { invites: 3, tickets: 1 }
+};
 
 function saveData() {
   try {
@@ -36,13 +39,14 @@ function loadData() {
       inviteFilterEnabled = loadedConfig.inviteFilterEnabled;
       config.giveawayChannelId = loadedConfig.giveawayChannelId;
       config.winnersChannelId = loadedConfig.winnersChannelId;
+      config.inviteRules = loadedConfig.inviteRules || { invites: 3, tickets: 1 };
     }
   } catch (err) {
     console.error('Error loading data:', err);
     giveaways = {};
     users = {};
     inviteFilterEnabled = true;
-    config = { giveawayChannelId: null, winnersChannelId: null };
+    config = { giveawayChannelId: null, winnersChannelId: null, inviteRules: { invites: 3, tickets: 1 } };
   }
   saveData();
 }
@@ -63,7 +67,7 @@ client.on('guildMemberAdd', (member) => {
       const oldInvite = cachedInvites.get(invite.code);
       if (oldInvite && invite.uses > oldInvite.uses && invite.inviter) {
         const inviterId = invite.inviter.id;
-        users[inviterId] = users[inviterId] || { tickets: 0, ccoin: 0, invites: 0 };
+        users[inviterId] = users[inviterId] || { tickets: 0, ccoin: 0, invites: 0, inviteCode: null };
         if (!inviteFilterEnabled || !member.user.bot) {
           users[inviterId].invites++;
           updateTicketsFromInvites(inviterId);
@@ -76,17 +80,29 @@ client.on('guildMemberAdd', (member) => {
 
 function updateTicketsFromInvites(userId) {
   const invites = users[userId].invites;
-  let tickets = 0;
-  if (invites >= 20) tickets = 5;
-  else if (invites >= 10) tickets = 3;
-  else if (invites >= 5) tickets = 2;
-  else if (invites >= 3) tickets = 1;
+  const { invites: requiredInvites, tickets: rewardTickets } = config.inviteRules;
+  const tickets = Math.floor(invites / requiredInvites) * rewardTickets;
   users[userId].tickets = Math.max(users[userId].tickets, tickets);
   saveData();
 }
 
+async function createInviteLink(guild, channel, userId) {
+  try {
+    const invite = await channel.createInvite({
+      maxAge: 0,
+      maxUses: 0,
+      unique: true,
+      reason: `Invite for user ${userId}`
+    });
+    return invite.url;
+  } catch (err) {
+    console.error('Error creating invite:', err);
+    return null;
+  }
+}
+
 client.once('ready', () => {
-  console.log(`✅ Bot ${client.user.tag} is online!`);
+  console.log(`Bot ${client.user.tag} is online!`);
   client.invites = new Map();
   client.guilds.cache.forEach((guild) => {
     guild.invites.fetch().then((invites) => client.invites.set(guild.id, invites));
@@ -95,38 +111,145 @@ client.once('ready', () => {
 
   const commands = [
     new SlashCommandBuilder()
-      .setName('ping')
-      .setDescription('Check bot latency'),
-    new SlashCommandBuilder()
       .setName('giveaway')
-      .setDescription('Start a new giveaway (Admin only)')
+      .setDescription('Start a new giveaway')
       .addIntegerOption(option => option.setName('hours').setDescription('Duration in hours').setRequired(true))
       .addIntegerOption(option => option.setName('winners').setDescription('Number of winners').setRequired(true))
       .addStringOption(option => option.setName('prize').setDescription('Prize description').setRequired(true)),
     new SlashCommandBuilder()
-      .setName('invitefilter')
-      .setDescription('Toggle invite filter (Admin only)')
-      .addStringOption(option => option.setName('state').setDescription('on/off').setRequired(true).addChoices({ name: 'On', value: 'on' }, { name: 'Off', value: 'off' })),
-    new SlashCommandBuilder()
-      .setName('buy')
-      .setDescription('Buy tickets with CCOIN')
-      .addIntegerOption(option => option.setName('amount').setDescription('Number of tickets').setRequired(true)),
-    new SlashCommandBuilder()
-      .setName('stats')
-      .setDescription('View your stats'),
-    new SlashCommandBuilder()
-      .setName('setccoin')
-      .setDescription('Set CCOIN for a user (Admin only)')
-      .addUserOption(option => option.setName('user').setDescription('Target user').setRequired(true))
-      .addIntegerOption(option => option.setName('amount').setDescription('CCOIN amount').setRequired(true)),
-    new SlashCommandBuilder()
-      .setName('setchannel')
-      .setDescription('Set giveaway or winners channel (Admin only)')
-      .addStringOption(option => option.setName('type').setDescription('Channel type').setRequired(true).addChoices({ name: 'Giveaway', value: 'giveaway' }, { name: 'Winners', value: 'winners' }))
-      .addChannelOption(option => option.setName('channel').setDescription('Target channel').setRequired(true))
+      .setName('setinvitetickets')
+      .setDescription('Set invite-to-ticket ratio')
+      .addIntegerOption(option => option.setName('invites').setDescription('Number of invites needed').setRequired(true))
+      .addIntegerOption(option => option.setName('tickets').setDescription('Tickets to give').setRequired(true))
   ];
 
   client.application.commands.set(commands);
+});
+
+client.on('interactionCreate', async interaction => {
+  if (interaction.isCommand()) {
+    if (interaction.commandName === 'giveaway') {
+      const hours = interaction.options.getInteger('hours');
+      const winners = interaction.options.getInteger('winners');
+      const prize = interaction.options.getString('prize');
+
+      const duration = hours * 60 * 60 * 1000;
+      const endTime = Date.now() + duration;
+
+      const embed = new EmbedBuilder()
+        .setColor('#FFD700')
+        .setTitle('🎉 GIVEAWAY 🎉')
+        .setDescription(`
+Prize: ${prize}
+Time: ${new Date(endTime).toLocaleString()}
+Winners: ${winners}
+
+Participants: 0
+Total Tickets: 0
+
+Get tickets:
+• Invite friends (${config.inviteRules.invites} invites = ${config.inviteRules.tickets} ticket)
+• Buy with CCOIN (/buy)
+        `);
+
+      const joinButton = new ButtonBuilder()
+        .setCustomId('join_giveaway')
+        .setLabel('Join Giveaway')
+        .setStyle(ButtonStyle.Success)
+        .setEmoji('🎉');
+
+      const row = new ActionRowBuilder().addComponents(joinButton);
+      const message = await interaction.channel.send({ embeds: [embed], components: [row] });
+
+      giveaways[message.id] = {
+        prize,
+        endTime,
+        winners,
+        participants: [],
+        messageId: message.id
+      };
+
+      interaction.reply({ content: 'Giveaway started!', ephemeral: true });
+    }
+
+    if (interaction.commandName === 'setinvitetickets') {
+      const invites = interaction.options.getInteger('invites');
+      const tickets = interaction.options.getInteger('tickets');
+
+      config.inviteRules = { invites, tickets };
+      saveData();
+
+      interaction.reply(`Updated: ${invites} invites = ${tickets} tickets`);
+    }
+  }
+
+  if (interaction.isButton()) {
+    if (interaction.customId === 'join_giveaway') {
+      const giveaway = giveaways[interaction.message.id];
+      if (!giveaway) return;
+
+      const userId = interaction.user.id;
+      users[userId] = users[userId] || { tickets: 0, ccoin: 0, invites: 0 };
+
+      if (users[userId].tickets === 0) {
+        const buyButton = new ButtonBuilder()
+          .setCustomId('buy_ticket')
+          .setLabel('Buy Tickets')
+          .setStyle(ButtonStyle.Primary);
+
+        const inviteButton = new ButtonBuilder()
+          .setCustomId('invite_friends')
+          .setLabel('Invite Friends')
+          .setStyle(ButtonStyle.Secondary);
+
+        const row = new ActionRowBuilder().addComponents(buyButton, inviteButton);
+
+        interaction.reply({
+          content: 'You need tickets to join! Choose an option:',
+          ephemeral: true,
+          components: [row]
+        });
+        return;
+      }
+
+      if (!giveaway.participants.includes(userId)) {
+        giveaway.participants.push(userId);
+        saveData();
+
+        interaction.reply({
+          content: `You joined with ${users[userId].tickets} tickets!`,
+          ephemeral: true
+        });
+      }
+    }
+
+    if (interaction.customId === 'buy_ticket') {
+      interaction.reply({
+        content: 'Use /buy <amount> to purchase tickets\nExample: /buy 3',
+        ephemeral: true
+      });
+    }
+
+    if (interaction.customId === 'invite_friends') {
+      const inviteLink = await createInviteLink(
+        interaction.guild,
+        interaction.channel,
+        interaction.user.id
+      );
+
+      if (inviteLink) {
+        interaction.reply({
+          content: `Here's your invite link: ${inviteLink}\nInvite ${config.inviteRules.invites} friends to get ${config.inviteRules.tickets} tickets!`,
+          ephemeral: true
+        });
+      } else {
+        interaction.reply({
+          content: 'Error creating invite link. Please try again later.',
+          ephemeral: true
+        });
+      }
+    }
+  }
 });
 
 client.on('interactionCreate', async interaction => {
@@ -140,76 +263,6 @@ client.on('interactionCreate', async interaction => {
       await interaction.reply({ embeds: [embed] });
     }
 
-    else if (commandName === 'giveaway' && member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-      const hours = options.getInteger('hours');
-      const winnersCount = options.getInteger('winners');
-      const prize = options.getString('prize');
-      
-      if (hours <= 0 || winnersCount <= 0) {
-        const errorEmbed = new EmbedBuilder()
-          .setColor('#ff0000')
-          .setDescription('❌ Hours and winners count must be positive!');
-        return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
-      }
-
-      if (!config.giveawayChannelId) {
-        const errorEmbed = new EmbedBuilder()
-          .setColor('#ff0000')
-          .setDescription('❌ Please set giveaway channel first with /setchannel!');
-        return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
-      }
-
-      const duration = hours * 60 * 60 * 1000;
-      const endTime = Date.now() + duration;
-      
-      const embed = new EmbedBuilder()
-        .setColor('#FFD700')
-        .setTitle('🎉 GIVEAWAY 🎉')
-        .setDescription(`
-          Prize: **${prize}**
-          Time: <t:${Math.floor(endTime / 1000)}:R>
-          Winners: ${winnersCount}
-          
-          Participants: 0
-          Total Tickets: 0
-          
-          Get tickets:
-          • Invite friends (3 invites = 1 ticket)
-          • Buy with CCOIN (/buy)
-        `)
-        .setTimestamp();
-
-      const joinButton = new ButtonBuilder()
-        .setCustomId('join_giveaway')
-        .setLabel('Join Giveaway')
-        .setEmoji('🎉')
-        .setStyle(ButtonStyle.Success);
-
-      const buyButton = new ButtonBuilder()
-        .setCustomId('buy_ticket')
-        .setLabel('Buy Tickets')
-        .setEmoji('🎫')
-        .setStyle(ButtonStyle.Primary);
-
-      const row = new ActionRowBuilder().addComponents(joinButton, buyButton);
-      const giveawayMsg = await client.channels.cache.get(config.giveawayChannelId).send({ embeds: [embed], components: [row] });
-      
-      giveaways[giveawayMsg.id] = { 
-        prize, 
-        endTime, 
-        participants: {},
-        winnersCount,
-        channelId: config.giveawayChannelId
-      };
-      saveData();
-
-      setTimeout(() => endGiveaway(giveawayMsg.id), duration);
-      
-      const successEmbed = new EmbedBuilder()
-        .setColor('#00ff00')
-        .setDescription('✅ Giveaway started successfully!');
-      await interaction.reply({ embeds: [successEmbed] });
-    }
 
     else if (commandName === 'invitefilter' && member.permissions.has(PermissionsBitField.Flags.Administrator)) {
       inviteFilterEnabled = options.getString('state') === 'on';
@@ -238,7 +291,6 @@ client.on('interactionCreate', async interaction => {
           .setDescription('❌ Not enough CCoins');
         return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
       }
-
       users[interaction.user.id].ccoin -= cost;
       users[interaction.user.id].tickets += amount;
       saveData();
@@ -288,81 +340,16 @@ client.on('interactionCreate', async interaction => {
       await interaction.reply({ embeds: [embed] });
     }
   }
-
-  else if (interaction.isButton()) {
-    const { customId, user, message } = interaction;
-    users[user.id] = users[user.id] || { tickets: 0, ccoin: 0, invites: 0 };
-
-    if (customId === 'join_giveaway') {
-      const giveaway = giveaways[message.id];
-      if (!giveaway) {
-        const errorEmbed = new EmbedBuilder()
-          .setColor('#ff0000')
-          .setDescription('❌ This giveaway has ended');
-        return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
-      }
-      
-      if (users[user.id].tickets === 0) {
-        const errorEmbed = new EmbedBuilder()
-          .setColor('#ff0000')
-          .setDescription('❌ You need tickets to join!\n• Invite friends (3 invites = 1 ticket)\n• Use /buy to purchase tickets');
-        return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
-      }
-
-      if (giveaway.participants[user.id]) {
-        const errorEmbed = new EmbedBuilder()
-          .setColor('#ff0000')
-          .setDescription('❌ You have already joined!');
-        return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
-      }
-
-      giveaway.participants[user.id] = users[user.id].tickets;
-      saveData();
-
-      const totalTickets = Object.values(giveaway.participants).reduce((a, b) => a + b, 0);
-      const participantsCount = Object.keys(giveaway.participants).length;
-
-      const updatedEmbed = new EmbedBuilder()
-        .setColor('#FFD700')
-        .setTitle('🎉 GIVEAWAY 🎉')
-        .setDescription(`
-          Prize: **${giveaway.prize}**
-          Time: <t:${Math.floor(giveaway.endTime / 1000)}:R>
-          Winners: ${giveaway.winnersCount}
-          
-          Participants: ${participantsCount}
-          Total Tickets: ${totalTickets}
-          
-          Get tickets:
-          • Invite friends (3 invites = 1 ticket)
-          • Buy with CCOIN (/buy)
-        `)
-        .setTimestamp();
-
-      await message.edit({ embeds: [updatedEmbed] });
-      
-      const successEmbed = new EmbedBuilder()
-        .setColor('#00ff00')
-        .setDescription(`✅ Joined with ${users[user.id].tickets} tickets!`);
-      await interaction.reply({ embeds: [successEmbed], ephemeral: true });
-    }
-
-    else if (customId === 'buy_ticket') {
-      const embed = new EmbedBuilder()
-        .setColor('#0099ff')
-        .setDescription('💰 Use `/buy <amount>` to purchase tickets\nExample: `/buy 3`');
-      await interaction.reply({ embeds: [embed], ephemeral: true });
-    }
-  }
 });
+
 
 async function endGiveaway(messageId) {
   const giveaway = giveaways[messageId];
   if (!giveaway) return;
 
   const entries = [];
-  Object.entries(giveaway.participants).forEach(([userId, tickets]) => {
-    for (let i = 0; i < tickets; i++) entries.push(userId);
+  giveaway.participants.forEach((userId) => {
+    for (let i = 0; i < users[userId].tickets; i++) entries.push(userId);
   });
 
   const channel = await client.channels.fetch(giveaway.channelId);
@@ -376,7 +363,7 @@ async function endGiveaway(messageId) {
     channel.send({ embeds: [embed] });
   } else {
     const winners = new Set();
-    while (winners.size < giveaway.winnersCount && winners.size < entries.length) {
+    while (winners.size < giveaway.winners && winners.size < entries.length) {
       winners.add(entries[Math.floor(Math.random() * entries.length)]);
     }
 
