@@ -84,13 +84,27 @@ client.on('guildMemberAdd', async (member) => {
 
     if (usedInvite && usedInvite.inviter) {
       const inviterId = usedInvite.inviter.id;
-      users[inviterId] = users[inviterId] || { tickets: 0, ccoin: 0, invites: 0, inviteCode: null, lastInvite: 0 };
+      users[inviterId] = users[inviterId] || { tickets: 0, ccoin: 0, invites: 0, inviteCode: null, lastInvite: 0, inviteHistory: [] , ticketsFromInvites: 0};
 
       if (!inviteFilterEnabled || !member.user.bot) {
-        // به جای تکیه بر inviteCode، از inviterId برای ردیابی استفاده می‌کنیم
+        const now = Date.now();
         users[inviterId].invites = (users[inviterId].invites || 0) + 1;
-        users[inviterId].lastInvite = Date.now();
-        users[inviterId].inviteCode = usedInvite.code; // به‌روزرسانی کد دعوت
+        users[inviterId].lastInvite = now;
+        users[inviterId].inviteCode = usedInvite.code;
+
+        // ذخیره تاریخچه دعوت
+        users[inviterId].inviteHistory.push({
+          userId: member.user.id,
+          username: member.user.tag,
+          timestamp: now,
+          inviteCode: usedInvite.code
+        });
+
+        // محدود کردن تاریخچه به 5 دعوت آخر
+        if (users[inviterId].inviteHistory.length > 5) {
+          users[inviterId].inviteHistory = users[inviterId].inviteHistory.slice(-5);
+        }
+
         updateTicketsFromInvites(inviterId);
         saveData();
 
@@ -99,7 +113,14 @@ client.on('guildMemberAdd', async (member) => {
           const embed = new EmbedBuilder()
             .setColor('#00FF88')
             .setTitle('📨 دعوت جدید!')
-            .setDescription(`<@${inviterId}> یه نفر رو دعوت کرد!\n**تعداد دعوت‌ها:** ${users[inviterId].invites} از ${config.inviteRules.invites} برای دریافت ${config.inviteRules.tickets} بلیط`)
+            .setDescription(`
+🎉 <@${inviterId}> کاربر ${member.user.tag} رو دعوت کرد!
+📊 **آمار دعوت‌ها:**
+• تعداد کل: ${users[inviterId].invites}
+• بلیط‌های دریافتی: ${users[inviterId].ticketsFromInvites}
+• تا بلیط بعدی: ${config.inviteRules.invites - (users[inviterId].invites % config.inviteRules.invites)} دعوت دیگر
+
+🔗 **کد دعوت:** \`${usedInvite.code}\``)
             .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
             .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
             .setTimestamp();
@@ -119,6 +140,7 @@ function updateTicketsFromInvites(userId) {
   const { invites: requiredInvites, tickets: rewardTickets } = config.inviteRules;
   const tickets = Math.floor(invites / requiredInvites) * rewardTickets;
   users[userId].tickets = Math.max(users[userId].tickets, tickets);
+  users[userId].ticketsFromInvites = tickets; // Update ticketsFromInvites
   saveData();
 }
 
@@ -321,7 +343,7 @@ client.on('interactionCreate', async interaction => {
       }
 
       const cost = amount <= 2 ? amount * 1000 : amount === 3 ? 2800 : amount * 900;
-      users[interaction.user.id] = users[interaction.user.id] || { tickets: 0, ccoin: 0, invites: 0, inviteCode: null, lastInvite: 0 };
+      users[interaction.user.id] = users[interaction.user.id] || { tickets: 0, ccoin: 0, invites: 0, inviteCode: null, lastInvite: 0, inviteHistory: [], ticketsFromInvites: 0 };
 
       if (users[interaction.user.id].ccoin < cost) {
         const errorEmbed = new EmbedBuilder()
@@ -349,7 +371,7 @@ client.on('interactionCreate', async interaction => {
     }
 
     else if (commandName === 'stats') {
-      users[interaction.user.id] = users[interaction.user.id] || { tickets: 0, ccoin: 0, invites: 0, inviteCode: null, lastInvite: 0 };
+      users[interaction.user.id] = users[interaction.user.id] || { tickets: 0, ccoin: 0, invites: 0, inviteCode: null, lastInvite: 0, inviteHistory: [], ticketsFromInvites: 0 };
       const lastInviteTime = users[interaction.user.id].lastInvite ? `<t:${Math.floor(users[interaction.user.id].lastInvite / 1000)}:R>` : 'هنوز دعوتی انجام نشده';
       const embed = new EmbedBuilder()
         .setColor('#00FF88')
@@ -369,7 +391,7 @@ client.on('interactionCreate', async interaction => {
     else if (commandName === 'setccoin' && hasAdminRole()) {
       const targetUser = options.getUser('user');
       const amount = options.getInteger('amount');
-      users[targetUser.id] = users[targetUser.id] || { tickets: 0, ccoin: 0, invites: 0, inviteCode: null, lastInvite: 0 };
+      users[targetUser.id] = users[targetUser.id] || { tickets: 0, ccoin: 0, invites: 0, inviteCode: null, lastInvite: 0, inviteHistory: [], ticketsFromInvites: 0 };
       users[targetUser.id].ccoin = amount;
       saveData();
 
@@ -394,7 +416,7 @@ client.on('interactionCreate', async interaction => {
         .setColor('#00FF88')
         .setTitle('✅ تنظیم کانال')
         .setDescription(`📢 کانال ${type === 'giveaway' ? 'قرعه‌کشی' : 'برندگان'} به ${channel} تنظیم شد.`)
-        .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
+                .setThumbnail('https://cdn.discordapp.com/attachments/1344927538740203590/1353281227469225984/icons8-giveaway-100.png?ex=67e114db&is=67dfc35b&hm=1f0bb9731a789455c9c97aa1b9420c4d9e63ec670501b5232b334f1fb6e083d5&')
         .setFooter({ text: 'ربات قرعه‌کشی', iconURL: 'https://cdn.discordapp.com/attachments/1344927538740203590/1353281270066446397/peakpx_1.jpg?ex=67e114e5&is=67dfc365&hm=f8c13fcc15c17219bd8eb8b6aa25058dd377fbacdffc946310835d9df7d3cfdc&' })
         .setTimestamp();
       await interaction.reply({ embeds: [embed], ephemeral: true });
@@ -465,7 +487,7 @@ client.on('interactionCreate', async interaction => {
       }
 
       const userId = interaction.user.id;
-      users[userId] = users[userId] || { tickets: 0, ccoin: 0, invites: 0, inviteCode: null, lastInvite: 0 };
+      users[userId] = users[userId] || { tickets: 0, ccoin: 0, invites: 0, inviteCode: null, lastInvite: 0, inviteHistory: [], ticketsFromInvites: 0 };
 
       if (users[userId].tickets === 0) {
         const errorEmbed = new EmbedBuilder()
@@ -552,7 +574,7 @@ client.on('interactionCreate', async interaction => {
 
     else if (interaction.customId === 'invite_friends') {
       const userId = interaction.user.id;
-      users[userId] = users[userId] || { tickets: 0, ccoin: 0, invites: 0, inviteCode: null, lastInvite: 0 };
+      users[userId] = users[userId] || { tickets: 0, ccoin: 0, invites: 0, inviteCode: null, lastInvite: 0, inviteHistory: [], ticketsFromInvites: 0 };
 
       const channel = interaction.guild.channels.cache.get(config.giveawayChannelId);
       if (!channel) {
