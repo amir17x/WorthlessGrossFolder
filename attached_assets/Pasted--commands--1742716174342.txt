@@ -1,0 +1,619 @@
+明白了، شما می‌خواهید که نام دستورات (commands) به انگلیسی بمونه چون دیسکورد با دستورات فارسی مشکل داره، اما توضیحات دستورات، پیام‌ها، Embedها و همه چیزهای دیگه به فارسی باشه. توی تصویر، توضیحات دستور `/giveaway` که "Start a new giveaway" هست رو باید فارسی کنیم، اما خود دستور `/giveaway` انگلیسی بمونه.
+
+بیایم کد رو اصلاح کنیم تا:
+1. نام دستورات انگلیسی بمونه (مثل `/giveaway`)، اما توضیحاتشون فارسی بشه.
+2. توضیحات `/giveaway` که توی تصویر خط کشیدی، به فارسی تغییر کنه (مثلاً به "شروع یک قرعه‌کشی جدید").
+3. بقیه پیام‌ها و توضیحات که قبلاً فارسی شدن، دست‌نخورده باقی بمونن.
+
+---
+
+### **📝 کد اصلاح‌شده با نام دستورات انگلیسی و توضیحات فارسی**
+
+```javascript
+const { Client, GatewayIntentBits, EmbedBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder, PermissionsBitField, SlashCommandBuilder } = require('discord.js');
+const fs = require('fs');
+
+const client = new Client({ 
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildInvites
+  ]
+});
+
+let giveaways = {};
+let users = {};
+let inviteFilterEnabled = true;
+let config = { 
+  giveawayChannelId: null, 
+  winnersChannelId: null, 
+  inviteRules: { invites: 3, tickets: 1 }
+};
+
+function saveData() {
+  try {
+    fs.writeFileSync('giveaways.json', JSON.stringify(giveaways, null, 2));
+    fs.writeFileSync('users.json', JSON.stringify(users, null, 2));
+    fs.writeFileSync('config.json', JSON.stringify({ inviteFilterEnabled, ...config }, null, 2));
+  } catch (err) {
+    console.error('خطا در ذخیره داده‌ها:', err);
+  }
+}
+
+function loadData() {
+  try {
+    if (fs.existsSync('giveaways.json')) giveaways = JSON.parse(fs.readFileSync('giveaways.json', 'utf8'));
+    if (fs.existsSync('users.json')) users = JSON.parse(fs.readFileSync('users.json', 'utf8'));
+    if (fs.existsSync('config.json')) {
+      const loadedConfig = JSON.parse(fs.readFileSync('config.json', 'utf8'));
+      inviteFilterEnabled = loadedConfig.inviteFilterEnabled;
+      config.giveawayChannelId = loadedConfig.giveawayChannelId;
+      config.winnersChannelId = loadedConfig.winnersChannelId;
+      config.inviteRules = loadedConfig.inviteRules || { invites: 3, tickets: 1 };
+    }
+  } catch (err) {
+    console.error('خطا در بارگذاری داده‌ها:', err);
+    giveaways = {};
+    users = {};
+    inviteFilterEnabled = true;
+    config = { giveawayChannelId: null, winnersChannelId: null, inviteRules: { invites: 3, tickets: 1 } };
+  }
+  saveData();
+}
+
+loadData();
+
+function cleanupExpiredGiveaways() {
+  const now = Date.now();
+  Object.entries(giveaways).forEach(([messageId, giveaway]) => {
+    if (giveaway.endTime <= now) endGiveaway(messageId);
+  });
+}
+
+client.on('guildMemberAdd', (member) => {
+  member.guild.invites.fetch().then((guildInvites) => {
+    const cachedInvites = client.invites?.get(member.guild.id) || new Map();
+    guildInvites.forEach((invite) => {
+      const oldInvite = cachedInvites.get(invite.code);
+      if (oldInvite && invite.uses > oldInvite.uses && invite.inviter) {
+        const inviterId = invite.inviter.id;
+        users[inviterId] = users[inviterId] || { tickets: 0, ccoin: 0, invites: 0, inviteCode: null };
+        if (!inviteFilterEnabled || !member.user.bot) {
+          users[inviterId].invites++;
+          updateTicketsFromInvites(inviterId);
+        }
+      }
+    });
+    client.invites?.set(member.guild.id, guildInvites);
+  });
+});
+
+function updateTicketsFromInvites(userId) {
+  const invites = users[userId].invites;
+  const { invites: requiredInvites, tickets: rewardTickets } = config.inviteRules;
+  const tickets = Math.floor(invites / requiredInvites) * rewardTickets;
+  users[userId].tickets = Math.max(users[userId].tickets, tickets);
+  saveData();
+}
+
+client.once('ready', () => {
+  console.log(`✅ ربات ${client.user.tag} آنلاین شد!`);
+  client.invites = new Map();
+  client.guilds.cache.forEach((guild) => {
+    guild.invites.fetch().then((invites) => client.invites.set(guild.id, invites));
+  });
+  setInterval(cleanupExpiredGiveaways, 5 * 60 * 1000);
+
+  const commands = [
+    new SlashCommandBuilder()
+      .setName('ping')
+      .setDescription('بررسی تأخیر ربات'),
+    new SlashCommandBuilder()
+      .setName('giveaway')
+      .setDescription('شروع یک قرعه‌کشی جدید (فقط ادمین)')
+      .addIntegerOption(option => option.setName('hours').setDescription('مدت زمان به ساعت (اختیاری)').setRequired(false))
+      .addStringOption(option => option.setName('date').setDescription('تاریخ پایان (فرمت: YYYY-MM-DD HH:mm، مثال: 2025-03-25 14:30، اختیاری)').setRequired(false))
+      .addIntegerOption(option => option.setName('winners').setDescription('تعداد برندگان').setRequired(true))
+      .addStringOption(option => option.setName('prize').setDescription('توضیحات جایزه').setRequired(true)),
+    new SlashCommandBuilder()
+      .setName('invitefilter')
+      .setDescription('فعال/غیرفعال کردن فیلتر اینوایت (فقط ادمین)')
+      .addStringOption(option => option.setName('state').setDescription('روشن/خاموش').setRequired(true).addChoices({ name: 'روشن', value: 'on' }, { name: 'خاموش', value: 'off' })),
+    new SlashCommandBuilder()
+      .setName('buy')
+      .setDescription('خرید بلیط با CCOIN')
+      .addIntegerOption(option => option.setName('amount').setDescription('تعداد بلیط‌ها').setRequired(true)),
+    new SlashCommandBuilder()
+      .setName('stats')
+      .setDescription('مشاهده وضعیت شما'),
+    new SlashCommandBuilder()
+      .setName('setccoin')
+      .setDescription('تنظیم CCOIN برای یک کاربر (فقط ادمین)')
+      .addUserOption(option => option.setName('user').setDescription('کاربر موردنظر').setRequired(true))
+      .addIntegerOption(option => option.setName('amount').setDescription('مقدار CCOIN').setRequired(true)),
+    new SlashCommandBuilder()
+      .setName('setchannel')
+      .setDescription('تنظیم چنل قرعه‌کشی یا برندگان (فقط ادمین)')
+      .addStringOption(option => option.setName('type').setDescription('نوع چنل').setRequired(true).addChoices({ name: 'قرعه‌کشی', value: 'giveaway' }, { name: 'برندگان', value: 'winners' }))
+      .addChannelOption(option => option.setName('channel').setDescription('چنل موردنظر').setRequired(true)),
+    new SlashCommandBuilder()
+      .setName('setinvitetickets')
+      .setDescription('تنظیم نسبت اینوایت به بلیط (فقط ادمین)')
+      .addIntegerOption(option => option.setName('invites').setDescription('تعداد اینوایت موردنیاز').setRequired(true))
+      .addIntegerOption(option => option.setName('tickets').setDescription('تعداد بلیط پاداش').setRequired(true))
+  ];
+
+  client.application.commands.set(commands);
+});
+
+client.on('interactionCreate', async interaction => {
+  if (interaction.isCommand()) {
+    const { commandName, options, member } = interaction;
+
+    if (commandName === 'ping') {
+      const embed = new EmbedBuilder()
+        .setColor('#00ff00')
+        .setDescription(`🏓 پینگ: ${client.ws.ping} میلی‌ثانیه`);
+      await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    else if (commandName === 'giveaway' && member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      const hours = options.getInteger('hours');
+      const dateStr = options.getString('date');
+      const winnersCount = options.getInteger('winners');
+      const prize = options.getString('prize');
+
+      if ((hours && dateStr) || (!hours && !dateStr)) {
+        const errorEmbed = new EmbedBuilder()
+          .setColor('#ff0000')
+          .setDescription('❌ لطفاً فقط یکی از گزینه‌های "ساعت" یا "تاریخ" را وارد کنید!');
+        return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+      }
+
+      if (winnersCount <= 0) {
+        const errorEmbed = new EmbedBuilder()
+          .setColor('#ff0000')
+          .setDescription('❌ تعداد برندگان باید مثبت باشد!');
+        return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+      }
+
+      if (!config.giveawayChannelId) {
+        const errorEmbed = new EmbedBuilder()
+          .setColor('#ff0000')
+          .setDescription('❌ لطفاً ابتدا چنل قرعه‌کشی را با /setchannel تنظیم کنید!');
+        return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+      }
+
+      let endTime;
+      if (hours) {
+        const duration = hours * 60 * 60 * 1000;
+        endTime = Date.now() + duration;
+      } else if (dateStr) {
+        const date = new Date(dateStr);
+        if (isNaN(date.getTime()) || date <= new Date()) {
+          const errorEmbed = new EmbedBuilder()
+            .setColor('#ff0000')
+            .setDescription('❌ تاریخ نامعتبر است یا گذشته است! فرمت: YYYY-MM-DD HH:mm (مثال: 2025-03-25 14:30)');
+          return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+        }
+        endTime = date.getTime();
+      }
+
+      const embed = new EmbedBuilder()
+        .setColor('#FFD700')
+        .setTitle('🎉 قرعه‌کشی جدید 🎉')
+        .setDescription(`
+          🎁 جایزه: **${prize}**
+          ⏳ زمان پایان: <t:${Math.floor(endTime / 1000)}:R>
+          🏅 برندگان: ${winnersCount}
+
+          👥 شرکت‌کنندگان: 0
+          🎫 مجموع بلیط‌ها: 0
+
+          📌 بلیط بگیر:
+          • با دعوت دوستان (${config.inviteRules.invites} اینوایت = ${config.inviteRules.tickets} بلیط)
+          • خرید با CCOIN (/buy)
+        `)
+        .setTimestamp();
+
+      const joinButton = new ButtonBuilder()
+        .setCustomId('join_giveaway')
+        .setLabel('شرکت در قرعه‌کشی')
+        .setStyle(ButtonStyle.Success)
+        .setEmoji('🎉');
+
+      const row = new ActionRowBuilder().addComponents(joinButton);
+      const giveawayMsg = await client.channels.cache.get(config.giveawayChannelId).send({ embeds: [embed], components: [row] });
+
+      giveaways[giveawayMsg.id] = { 
+        prize, 
+        endTime, 
+        winnersCount,
+        participants: {},
+        channelId: config.giveawayChannelId
+      };
+      saveData();
+
+      setTimeout(() => endGiveaway(giveawayMsg.id), endTime - Date.now());
+
+      const successEmbed = new EmbedBuilder()
+        .setColor('#00ff00')
+        .setDescription('✅ قرعه‌کشی با موفقیت شروع شد!');
+      await interaction.reply({ embeds: [successEmbed], ephemeral: true });
+    }
+
+    else if (commandName === 'invitefilter' && member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      inviteFilterEnabled = options.getString('state') === 'on';
+      saveData();
+      const embed = new EmbedBuilder()
+        .setColor('#00ff00')
+        .setDescription(`✅ فیلتر اینوایت ${inviteFilterEnabled ? 'فعال' : 'غیرفعال'} شد.`);
+      await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    else if (commandName === 'buy') {
+      const amount = options.getInteger('amount');
+      if (amount <= 0) {
+        const errorEmbed = new EmbedBuilder()
+          .setColor('#ff0000')
+          .setDescription('❌ تعداد بلیط باید مثبت باشد!');
+        return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+      }
+      
+      const cost = amount <= 2 ? amount * 1000 : amount === 3 ? 2800 : amount * 900;
+      users[interaction.user.id] = users[interaction.user.id] || { tickets: 0, ccoin: 0, invites: 0, inviteCode: null };
+      
+      if (users[interaction.user.id].ccoin < cost) {
+        const errorEmbed = new EmbedBuilder()
+          .setColor('#ff0000')
+          .setDescription('❌ CCOIN کافی نداری!');
+        return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+      }
+
+      users[interaction.user.id].ccoin -= cost;
+      users[interaction.user.id].tickets += amount;
+      saveData();
+
+      const successEmbed = new EmbedBuilder()
+        .setColor('#00ff00')
+        .setDescription(`✅ ${amount} بلیط به قیمت ${cost} CCOIN خریدی!`);
+      await interaction.reply({ embeds: [successEmbed], ephemeral: true });
+    }
+
+    else if (commandName === 'stats') {
+      users[interaction.user.id] = users[interaction.user.id] || { tickets: 0, ccoin: 0, invites: 0, inviteCode: null };
+      const embed = new EmbedBuilder()
+        .setColor('#00ff00')
+        .setTitle('📊 وضعیت شما')
+        .setDescription(`
+          🎫 بلیط‌ها: ${users[interaction.user.id].tickets}
+          💰 CCOIN: ${users[interaction.user.id].ccoin}
+          📨 اینوایت‌ها: ${users[interaction.user.id].invites}
+        `);
+      await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    else if (commandName === 'setccoin' && member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      const targetUser = options.getUser('user');
+      const amount = options.getInteger('amount');
+      users[targetUser.id] = users[targetUser.id] || { tickets: 0, ccoin: 0, invites: 0, inviteCode: null };
+      users[targetUser.id].ccoin = amount;
+      saveData();
+      
+      const embed = new EmbedBuilder()
+        .setColor('#00ff00')
+        .setDescription(`✅ CCOIN کاربر ${targetUser.tag} به ${amount} تنظیم شد.`);
+      await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    else if (commandName === 'setchannel' && member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      const type = options.getString('type');
+      const channel = options.getChannel('channel');
+      if (type === 'giveaway') config.giveawayChannelId = channel.id;
+      else if (type === 'winners') config.winnersChannelId = channel.id;
+      saveData();
+      
+      const embed = new EmbedBuilder()
+        .setColor('#00ff00')
+        .setDescription(`✅ چنل ${type === 'giveaway' ? 'قرعه‌کشی' : 'برندگان'} به ${channel} تنظیم شد.`);
+      await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    else if (commandName === 'setinvitetickets' && member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      const invites = options.getInteger('invites');
+      const tickets = options.getInteger('tickets');
+      if (invites <= 0 || tickets <= 0) {
+        const errorEmbed = new EmbedBuilder()
+          .setColor('#ff0000')
+          .setDescription('❌ تعداد اینوایت‌ها و بلیط‌ها باید مثبت باشد!');
+        return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+      }
+
+      config.inviteRules = { invites, tickets };
+      saveData();
+
+      Object.keys(users).forEach(userId => updateTicketsFromInvites(userId));
+
+      const embed = new EmbedBuilder()
+        .setColor('#00ff00')
+        .setDescription(`✅ قانون اینوایت تنظیم شد: ${invites} اینوایت = ${tickets} بلیط`);
+      await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+  }
+
+  else if (interaction.isButton()) {
+    const { customId, user, message, guild } = interaction;
+    users[user.id] = users[user.id] || { tickets: 0, ccoin: 0, invites: 0, inviteCode: null };
+
+    if (customId === 'join_giveaway') {
+      const giveaway = giveaways[message.id];
+      if (!giveaway) {
+        const errorEmbed = new EmbedBuilder()
+          .setColor('#ff0000')
+          .setDescription('❌ این قرعه‌کشی تمام شده است!');
+        return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+      }
+      
+      if (giveaway.participants[user.id]) {
+        const errorEmbed = new EmbedBuilder()
+          .setColor('#ff0000')
+          .setDescription('❌ شما قبلاً در این قرعه‌کشی شرکت کرده‌اید!');
+        return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+      }
+
+      if (users[user.id].tickets === 0) {
+        const errorEmbed = new EmbedBuilder()
+          .setColor('#ff0000')
+          .setDescription(`❌ شما بلیط ندارید!\n• با دعوت دوستان (${config.inviteRules.invites} اینوایت = ${config.inviteRules.tickets} بلیط)\n• خرید با CCOIN (/buy)`);
+
+        const buyButton = new ButtonBuilder()
+          .setCustomId('buy_ticket')
+          .setLabel('خرید بلیط')
+          .setStyle(ButtonStyle.Primary)
+          .setEmoji('🎫');
+
+        const inviteButton = new ButtonBuilder()
+          .setCustomId('invite_friends')
+          .setLabel('دعوت دوستان')
+          .setStyle(ButtonStyle.Secondary)
+          .setEmoji('📨');
+
+        const row = new ActionRowBuilder().addComponents(buyButton, inviteButton);
+        return interaction.reply({ embeds: [errorEmbed], components: [row], ephemeral: true });
+      }
+
+      giveaway.participants[user.id] = users[user.id].tickets;
+      saveData();
+
+      const totalTickets = Object.values(giveaway.participants).reduce((a, b) => a + b, 0);
+      const participantsCount = Object.keys(giveaway.participants).length;
+
+      const updatedEmbed = new EmbedBuilder()
+        .setColor('#FFD700')
+        .setTitle('🎉 قرعه‌کشی جدید 🎉')
+        .setDescription(`
+          🎁 جایزه: **${giveaway.prize}**
+          ⏳ زمان پایان: <t:${Math.floor(giveaway.endTime / 1000)}:R>
+          🏅 برندگان: ${giveaway.winnersCount}
+
+          👥 شرکت‌کنندگان: ${participantsCount}
+          🎫 مجموع بلیط‌ها: ${totalTickets}
+
+          📌 بلیط بگیر:
+          • با دعوت دوستان (${config.inviteRules.invites} اینوایت = ${config.inviteRules.tickets} بلیط)
+          • خرید با CCOIN (/buy)
+        `)
+        .setTimestamp();
+
+      await message.edit({ embeds: [updatedEmbed] });
+      
+      const successEmbed = new EmbedBuilder()
+        .setColor('#00ff00')
+        .setDescription(`✅ با ${users[user.id].tickets} بلیط در قرعه‌کشی شرکت کردید!`);
+      await interaction.reply({ embeds: [successEmbed], ephemeral: true });
+    }
+
+    else if (customId === 'buy_ticket') {
+      const embed = new EmbedBuilder()
+        .setColor('#0099ff')
+        .setDescription('💰 برای خرید بلیط از `/buy <تعداد>` استفاده کنید\nمثال: `/buy 3`');
+      await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    else if (customId === 'invite_friends') {
+      if (users[user.id].inviteCode) {
+        const embed = new EmbedBuilder()
+          .setColor('#0099ff')
+          .setDescription(`📨 لینک اینوایت اختصاصی شما:\nhttps://discord.gg/${users[user.id].inviteCode}\nبا دعوت دوستان (${config.inviteRules.invites} اینوایت = ${config.inviteRules.tickets} بلیط) بلیط بگیرید!`);
+        return interaction.reply({ embeds: [embed], ephemeral: true });
+      }
+
+      const channel = guild.channels.cache.get(config.giveawayChannelId);
+      if (!channel) {
+        const errorEmbed = new EmbedBuilder()
+          .setColor('#ff0000')
+          .setDescription('❌ چنل قرعه‌کشی پیدا نشد!');
+        return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+      }
+
+      try {
+        const invite = await channel.createInvite({ maxUses: 0, unique: true, reason: `دعوت برای ${user.tag}` });
+        users[user.id].inviteCode = invite.code;
+        saveData();
+
+        const embed = new EmbedBuilder()
+          .setColor('#0099ff')
+          .setDescription(`📨 لینک اینوایت اختصاصی شما:\n${invite.url}\nبا دعوت دوستان (${config.inviteRules.invites} اینوایت = ${config.inviteRules.tickets} بلیط) بلیط بگیرید!`);
+        await interaction.reply({ embeds: [embed], ephemeral: true });
+      } catch (err) {
+        console.error('خطا در ساخت لینک اینوایت:', err);
+        const errorEmbed = new EmbedBuilder()
+          .setColor('#ff0000')
+          .setDescription('❌ نمی‌توانم لینک اینوایت بسازیم! لطفاً دسترسی‌های ربات را بررسی کنید.');
+        await interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+      }
+    }
+
+    else if (customId === 'claim_prize' && interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      const channel = interaction.channel;
+      const winnerId = channel.name.split('-')[1];
+      const proof = channel.messages.cache.last()?.attachments.first()?.url || 'بدون مدرک';
+
+      const embed = new EmbedBuilder()
+        .setColor('#0000FF')
+        .setTitle('🏆 تأیید دریافت جایزه')
+        .setDescription(`👤 برنده: <@${winnerId}>\n🎁 جایزه دریافت شد ✅\n📸 مدرک: ${proof}`)
+        .setTimestamp();
+      client.channels.cache.get(config.winnersChannelId).send({ embeds: [embed] });
+
+      users[winnerId].ccoin += 100;
+      saveData();
+
+      const successEmbed = new EmbedBuilder()
+        .setColor('#00ff00')
+        .setDescription('✅ جایزه تأیید شد و در چنل عمومی منتشر شد.');
+      await interaction.reply({ embeds: [successEmbed], ephemeral: true });
+      setTimeout(() => channel.delete(), 24 * 60 * 60 * 1000);
+    }
+  }
+});
+
+async function endGiveaway(messageId) {
+  const giveaway = giveaways[messageId];
+  if (!giveaway) return;
+
+  const entries = [];
+  for (const [userId, tickets] of Object.entries(giveaway.participants)) {
+    for (let i = 0; i < tickets; i++) entries.push(userId);
+  }
+
+  const channel = await client.channels.fetch(giveaway.channelId);
+  if (!channel) return;
+
+  if (entries.length === 0) {
+    const embed = new EmbedBuilder()
+      .setColor('#ff0000')
+      .setTitle('❌ قرعه‌کشی لغو شد')
+      .setDescription(`به دلیل نداشتن شرکت‌کننده، قرعه‌کشی "${giveaway.prize}" لغو شد.`);
+    channel.send({ embeds: [embed] });
+  } else {
+    const winners = [];
+    for (let i = 0; i < Math.min(giveaway.winnersCount, entries.length); i++) {
+      const winnerId = entries.splice(Math.floor(Math.random() * entries.length), 1)[0];
+      if (!winners.includes(winnerId)) winners.push(winnerId);
+    }
+
+    const winnersText = winners.map((id, index) => `🏅 نفر ${index + 1}: <@${id}>`).join('\n');
+    const embed = new EmbedBuilder()
+      .setColor('#0000FF')
+      .setTitle('🎉 نتایج قرعه‌کشی!')
+      .setDescription(`🎁 جایزه: **${giveaway.prize}**\n${winnersText}`)
+      .setTimestamp();
+    channel.send({ content: '🎊 تبریک به برندگان!', embeds: [embed] });
+
+    winners.forEach(async (winnerId) => {
+      try {
+        const user = await client.users.fetch(winnerId);
+        const dmEmbed = new EmbedBuilder()
+          .setColor('#00ff00')
+          .setDescription(`🎉 تبریک! شما برنده قرعه‌کشی "${giveaway.prize}" شدید!\nلطفاً در چنل خصوصی‌تان با ادمین هماهنگ کنید.`);
+        await user.send({ embeds: [dmEmbed] });
+      } catch (err) {
+        console.error(`خطا در ارسال پیام به ${winnerId}:`, err);
+      }
+
+      const winnerChannel = await channel.guild.channels.create({
+        name: `winner-${winnerId}`,
+        type: 0,
+        permissionOverwrites: [
+          { id: channel.guild.id, deny: ['ViewChannel'] },
+          { id: winnerId, allow: ['ViewChannel', 'SendMessages'] },
+          { id: channel.guild.roles.cache.find(r => r.permissions.has(PermissionsBitField.Flags.Administrator)).id, allow: ['ViewChannel', 'SendMessages'] }
+        ]
+      });
+
+      const claimButton = new ButtonBuilder()
+        .setCustomId('claim_prize')
+        .setLabel('🎁 جایزه تحویل داده شد')
+        .setStyle(ButtonStyle.Success);
+
+      const row = new ActionRowBuilder().addComponents(claimButton);
+      
+      const instructionEmbed = new EmbedBuilder()
+        .setColor('#0099ff')
+        .setDescription('لطفاً جایزه خود را تأیید کنید! (عکس یا متن بفرستید)');
+      
+      await winnerChannel.send({ content: `<@${winnerId}>`, embeds: [instructionEmbed], components: [row] });
+    });
+  }
+
+  delete giveaways[messageId];
+  saveData();
+}
+
+client.login('YOUR_BOT_TOKEN');
+```
+
+---
+
+### **📚 توضیحات تغییرات**
+
+#### **۱. نام دستورات انگلیسی**
+- نام همه دستورات به انگلیسی برگشت داده شد تا با دیسکورد سازگار باشه:
+  - `پینگ` → `ping`
+  - `قرعه‌کشی` → `giveaway`
+  - `فیلتر-اینوایت` → `invitefilter`
+  - `خرید` → `buy`
+  - `وضعیت` → `stats`
+  - `تنظیم-سی‌کوین` → `setccoin`
+  - `تنظیم-چنل` → `setchannel`
+  - `تنظیم-اینوایت-بلیط` → `setinvitetickets`
+
+#### **۲. توضیحات فارسی**
+- توضیحات همه دستورات به فارسی تغییر کرد:
+  - `/ping`: "بررسی تأخیر ربات"
+  - `/giveaway`: "شروع یک قرعه‌کشی جدید (فقط ادمین)" (طبق تصویر که خط کشیدی)
+  - `/invitefilter`: "فعال/غیرفعال کردن فیلتر اینوایت (فقط ادمین)"
+  - `/buy`: "خرید بلیط با CCOIN"
+  - `/stats`: "مشاهده وضعیت شما"
+  - `/setccoin`: "تنظیم CCOIN برای یک کاربر (فقط ادمین)"
+  - `/setchannel`: "تنظیم چنل قرعه‌کشی یا برندگان (فقط ادمین)"
+  - `/setinvitetickets`: "تنظیم نسبت اینوایت به بلیط (فقط ادمین)"
+
+#### **۳. گزینه‌ها و پیام‌ها**
+- توضیحات گزینه‌های دستورات هم فارسی شدن، اما نام گزینه‌ها (مثل `hours`، `date`، `winners`) انگلیسی باقی موندن تا سازگاری با کد حفظ بشه.
+- همه پیام‌ها، Embedها، دکمه‌ها و ... همچنان فارسی هستن و تغییری نکردن.
+
+#### **۴. تطابق با تصویر**
+- توضیحات `/giveaway` که توی تصویر خط کشیدی، از "Start a new giveaway" به "شروع یک قرعه‌کشی جدید (فقط ادمین)" تغییر کرد.
+
+---
+
+### **⚙️ راه‌اندازی توی Replit**
+1. پروژه Node.js توی Replit بساز.
+2. کد بالا رو توی `index.js` کپی کن.
+3. فایل‌های `giveaways.json`، `users.json` و `config.json` رو با `{}` بساز (برای `config.json` می‌تونی `{"inviteFilterEnabled": true, "giveawayChannelId": null, "winnersChannelId": null, "inviteRules": {"invites": 3, "tickets": 1}}` بذاری).
+4. توی `package.json` اینو بذار:
+   ```json
+   {
+     "dependencies": {
+       "discord.js": "^14.0.0"
+     }
+   }
+   ```
+5. توی متغیرهای محیطی Replit، `YOUR_BOT_TOKEN` رو با توکن رباتت پر کن.
+6. پروژه رو اجرا کن!
+7. با `/setchannel` چنل‌های قرعه‌کشی و برندگان رو تنظیم کن.
+
+---
+
+### **💡 تست و نکات**
+- **دستورات**:
+  - با `/giveaway` تست کن و ببین توضیحاتش فارسیه ("شروع یک قرعه‌کشی جدید (فقط ادمین)")، اما خود دستور انگلیسیه.
+  - بقیه دستورات مثل `/ping`، `/buy` و `/stats` رو هم تست کن که درست کار کنن.
+- **فارسی‌سازی**:
+  - مطمئن شو که همه پیام‌ها و توضیحات فارسی هستن، اما نام دستورات انگلیسیه.
+
+این کد الان دقیقاً همون چیزیه که می‌خواستی: نام دستورات انگلیسیه، توضیحات فارسیه، و همه پیام‌ها و رابط کاربری به فارسی باقی مونده. اگه بازم چیزی بخوای، بگو تا برات درست کنم! 🚀
